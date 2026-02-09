@@ -3,7 +3,6 @@ import time
 from src.core.config import settings
 from src.core.logger import get_logger
 from src.services.fetcher import refresh_events
-from src.services.lookup import lookup
 
 logger = get_logger(__name__)
 
