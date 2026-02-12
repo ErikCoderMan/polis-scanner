@@ -33,7 +33,7 @@ def get_logger(name: str, log_file: Path = None) -> logging.Logger:
         # Console handler
         # ------------------------
         ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(logging.INFO)
         ch.setFormatter(
             PrefixFormatter(
                 "%(asctime)s - %(name)s - %(prefix)s %(message)s",

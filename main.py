@@ -1,3 +1,4 @@
+import sys
 from src.cli import run_cli
 from src.gui import run_gui
 import argparse
@@ -6,12 +7,22 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gui", action="store_true")
     args = parser.parse_args()
-    
+
     if args.gui:
-        run_gui()
-        
+        return run_gui()
     else:
-        run_cli()
+        return run_cli()
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+
+    except KeyboardInterrupt:
+        print("\nInterrupted")
+        sys.exit(130)
+
+    except Exception:
+        import logging
+        logging.exception("Fatal unhandled error")
+        sys.exit(2)

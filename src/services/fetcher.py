@@ -18,7 +18,7 @@ def load_events(data_file: Path = DATA_FILE) -> List[Dict]:
     
     if not data_file.exists() or data_file.stat().st_size == 0:
         return []
-
+        
     try:
         with data_file.open("r", encoding="utf-8") as f:
             events = json.load(f)
@@ -36,16 +36,16 @@ def load_events(data_file: Path = DATA_FILE) -> List[Dict]:
 def save_events(old_events: List[Dict], new_events: List[Dict], data_file: Path = DATA_FILE) -> None:
     """Merge old and new events (unique by id) and save to data_file"""
     
-    seen_ids = {e["id"] for e in old_events}
-    unique_new = [e for e in new_events if e["id"] not in seen_ids]
-
+    seen_ids = {e.get("id") for e in old_events if "id" in e}
+    unique_new = [e for e in new_events if e.get("id") not in seen_ids]
+    
     merged_events = old_events + unique_new
     merged_events = sorted(merged_events, key=lambda e: e["id"], reverse=True)
-
+    
     data_file.parent.mkdir(parents=True, exist_ok=True)
     with data_file.open("w", encoding="utf-8") as f:
         json.dump(merged_events, f, indent=2, ensure_ascii=False)
-
+        
     logger.info(f"Saved {len(unique_new)} new and {len(merged_events)} total events to {data_file}")
 
 
@@ -64,11 +64,11 @@ def update_last_event(newest_event: Dict, state_file: Path = STATE_FILE) -> bool
     if last_event and newest_event["id"] == last_event.get("id"):
         logger.debug(f"No new events, last id: {newest_event['id']}")
         return False
-
+        
     state_file.parent.mkdir(parents=True, exist_ok=True)
     with state_file.open("w", encoding="utf-8") as f:
         json.dump(newest_event, f, indent=2, ensure_ascii=False)
-
+        
     return True
 
 
@@ -78,23 +78,23 @@ def refresh_events(data_file: Path = DATA_FILE, state_file: Path = STATE_FILE) -
     try:
         events = fetch_events()
         
-    except PolisAPIError as e:
-        logger.warning(f"API problem: {e}")
-        return []
-
+    except PolisAPIError:
+        logger.exception(f"Failed to refresh events from Polis API")
+        raise
+        
     if not events:
         return []
-
+        
     events = sorted(events, key=lambda e: e["id"], reverse=True)
     newest_event = events[0]
 
     if not update_last_event(newest_event, state_file):
         return []
-
+        
     old_events = load_events(data_file)
-    seen_ids = {e["id"] for e in old_events}
-    new_events = [e for e in events if e["id"] not in seen_ids]
-
+    seen_ids = {e.get("id") for e in old_events if "id" in e}
+    new_events = [e for e in events if e.get("id") not in seen_ids]
+    
     for e in new_events:
         logger.debug(f"New event: {e.get('id')} - {e.get('datetime')} - {e.get('name')} - {e.get('summary')}")
 
