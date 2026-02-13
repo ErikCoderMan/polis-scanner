@@ -102,7 +102,7 @@ async def refresh_events(
 
     for e in new_events:
         logger.debug(
-            f"New event: {e.get('id')} - {e.get('datetime')} - {e.get('name')} - {e.get('summary')}"
+            f"New event: {e.get('id')} | {e.get('datetime')} | {e.get('name')} | {e.get('summary')}"
         )
 
     if new_events:

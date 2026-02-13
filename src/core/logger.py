@@ -42,7 +42,7 @@ def get_logger(name: str, log_file: Path = None) -> logging.Logger:
     ui.setLevel(logging.INFO)
     ui.setFormatter(
         PrefixFormatter(
-            "%(asctime)s - %(name)s - %(prefix)s %(message)s",
+            "%(asctime)s %(prefix)s: %(message)s",
             datefmt="%H:%M:%S"
         )
     )
@@ -58,7 +58,7 @@ def get_logger(name: str, log_file: Path = None) -> logging.Logger:
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(
         PrefixFormatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            "%(asctime)s | %(name)s | %(levelname)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S"
         )
     )

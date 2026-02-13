@@ -6,7 +6,7 @@ from src.ui.log_buffer import log_buffer
 
 logger = get_logger(__name__)
 
-# global state kan importeras från main eller ui om man vill, här enkelt
+
 state = {
     "refresh_task": None,
     "force_scroll": False
@@ -29,7 +29,7 @@ async def cmd_refresh():
 
             for event in events:
                 logger.info(
-                    f"{event['id']} - {event['datetime']} - {event['name']} - {event['summary']}"
+                    f"{event['id']} - {event['name']} - {event['summary']}"
                 )
         
         except PolisAPIError:
