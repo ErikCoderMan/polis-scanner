@@ -32,12 +32,15 @@ async def cmd_refresh():
 
             for event in events:
                 logger.info(
-                    f"New: {event['id']} - {event['name']} - {event['summary']}"
+                    f"NEW: {event['id']} - {event['name']} - {event['summary']}"
                 )
         
         except PolisAPIError:
             logger.error("Could not update events (API failure)")
             raise
+        
+        finally:
+            state['refresh_task'] = None
 
     state["refresh_task"] = asyncio.create_task(_run())
     state["force_scroll"] = True
@@ -59,19 +62,22 @@ async def cmd_load():
             
             for event in events:
                 logger.info(
-                    f"{event['id']} - {event['name']} - {event['summary']}"
+                    f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
                 )
                 
         except (FileNotFoundError, json.JSONDecodeError):
             logger.error("No events saved or file corrupt, run 'refresh' instead")
             raise
+        
+        finally:
+            state['load_task'] = None
     
     state['load_task'] = asyncio.create_task(_run())
     state['force_scroll'] = True
 
 
 async def cmd_more(args):
-    if state['more_task'] and not state ['more_task'].done():
+    if state['more_task'] and not state['more_task'].done():
         logger.warning("Already running more command")
         return
     
@@ -102,6 +108,9 @@ async def cmd_more(args):
         except (FileNotFoundError, json.JSONDecodeError):
             logger.error("No events saved or file corrupt, run 'refresh' first")
             raise
+        
+        finally:
+            state['more_task'] = None
     
     state['more_task'] = asyncio.create_task(_run())
     state['force_scroll'] = True
