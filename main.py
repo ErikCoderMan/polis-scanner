@@ -2,9 +2,6 @@ import sys
 import argparse
 import asyncio
 
-from src.cli import run_cli
-from src.gui import run_gui
-
 
 async def main():
     parser = argparse.ArgumentParser()
@@ -12,9 +9,11 @@ async def main():
     args = parser.parse_args()
 
     if args.gui:
-        # GUI not async for now
+        # GUI not async yet, will add soon
+        from src.gui.main import run_gui
         return run_gui()
     else:
+        from src.cli.main import run_cli
         return await run_cli()
 
 

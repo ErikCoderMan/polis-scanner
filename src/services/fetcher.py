@@ -72,7 +72,7 @@ def update_last_event(newest_event: Dict, state_file: Path = STATE_FILE) -> bool
 
 
 # -----------------------------
-# NOW ASYNC
+# Refresh events
 # -----------------------------
 async def refresh_events(
     data_file: Path = DATA_FILE,
