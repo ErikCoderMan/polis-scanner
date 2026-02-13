@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
-import time
-import requests
+import asyncio
+import httpx
 
 from src.core.config import settings
 from src.core.logger import get_logger
@@ -28,7 +28,7 @@ class PolisAPIUnavailable(PolisAPIError):
 # -----------------------------
 # HTTP -> Domain translation
 # -----------------------------
-def _translate_http_error(resp: requests.Response, err: Exception) -> None:
+def _translate_http_error(resp: httpx.Response, err: Exception) -> None:
     status = resp.status_code
 
     # Retryable
@@ -45,12 +45,15 @@ def _translate_http_error(resp: requests.Response, err: Exception) -> None:
     raise PolisAPIError(f"Unexpected HTTP status {status}") from err
 
 
-def _request(params: Optional[dict] = None) -> List[Dict]:
+async def _request(
+    client: httpx.AsyncClient,
+    params: Optional[dict] = None
+) -> List[Dict]:
+
     try:
-        resp = requests.get(
+        resp = await client.get(
             EVENT_URL,
             params=params,
-            timeout=settings.http_timeout_s,
             headers={
                 "User-Agent": f"{settings.app_name}/{settings.version}",
                 "Accept": "application/json",
@@ -59,14 +62,13 @@ def _request(params: Optional[dict] = None) -> List[Dict]:
 
         try:
             resp.raise_for_status()
-        except requests.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             _translate_http_error(resp, e)
 
-    except requests.Timeout as e:
+    except httpx.TimeoutException as e:
         raise PolisAPITimeout("Polis API request timed out") from e
 
-    except requests.RequestException as e:
-        # DNS failure, connection reset, TLS, etc
+    except httpx.RequestError as e:
         raise PolisAPIUnavailable(f"Network error: {e}") from e
 
     # -------- Response validation --------
@@ -84,7 +86,7 @@ def _request(params: Optional[dict] = None) -> List[Dict]:
 # -----------------------------
 # Public API
 # -----------------------------
-def fetch_events(
+async def fetch_events(
     location: Optional[str] = None,
     event_type: Optional[str] = None,
     limit: Optional[int] = None,
@@ -103,20 +105,24 @@ def fetch_events(
     attempt = 0
     backoff = 2
 
-    while True:
-        try:
-            events = _request(params)
-            logger.debug(f"Fetched {len(events)} events")
-            return events
+    timeout = httpx.Timeout(settings.http_timeout_s)
 
-        except (PolisAPITimeout, PolisAPIUnavailable) as e:
-            attempt += 1
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        while True:
+            try:
+                events = await _request(client, params)
+                logger.debug(f"Fetched {len(events)} events")
+                return events
 
-            if attempt >= retries:
-                raise PolisAPIUnavailable("Failed after multiple retries") from e
+            except (PolisAPITimeout, PolisAPIUnavailable) as e:
+                attempt += 1
 
-            logger.warning(
-                f"API retry {attempt}/{retries}: {e} — sleeping {backoff}s"
-            )
-            time.sleep(backoff)
-            backoff *= 2
+                if attempt >= retries:
+                    raise PolisAPIUnavailable("Failed after multiple retries") from e
+
+                logger.warning(
+                    f"API retry {attempt}/{retries}: {e} — sleeping {backoff}s"
+                )
+
+                await asyncio.sleep(backoff)
+                backoff *= 2
