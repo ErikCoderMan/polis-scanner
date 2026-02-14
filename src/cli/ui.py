@@ -42,7 +42,7 @@ class TitleBar:
 
     def update_lines(self, num_lines):
         clock = datetime.now().strftime("%H:%M:%S")
-        self.text = f"{clock} | {settings.app_name.title()} (CLI) v{settings.version} | {num_lines} lines "
+        self.text = f"{clock} | {settings.app_name} (CLI) v{settings.version} | {num_lines} lines "
 
     def tick_siren(self):
         self.siren_index = (self.siren_index + 1) % len(self.siren_patterns)
@@ -89,7 +89,8 @@ async def ui_updater(app, state):
         buf = output_field.buffer
 
         # Determine if the cursor is already at the bottom
-        at_bottom = buf.document.cursor_position == len(buf.document.text)
+        lines_from_bottom = buf.document.line_count - buf.document.cursor_position_row - 1
+        at_bottom = lines_from_bottom <= 2
 
         # Update output_field only if last line changed
         if lines and lines[-1] != last_line:
@@ -107,7 +108,6 @@ async def ui_updater(app, state):
                 bypass_readonly=True
             )
 
-
             last_line = lines[-1]
 
         # Update title bar animation and line count
@@ -119,5 +119,5 @@ async def ui_updater(app, state):
         # Force redraw of UI so title updates even without user input
         app.invalidate()
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
 

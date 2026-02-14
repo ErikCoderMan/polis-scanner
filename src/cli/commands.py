@@ -4,6 +4,7 @@ from src.services.fetcher import refresh_events, load_events
 from src.api.polis import PolisAPIError
 from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
+from src.utils.query import query_events
 
 logger = get_logger(__name__)
 
@@ -12,6 +13,9 @@ state = {
     "refresh_task": None,
     "load_task": None,
     "more_task": None,
+    "filter_task": None,
+    "search_task": None,
+    "rank_task": None,
     "force_scroll": False
 }
 
@@ -118,8 +122,45 @@ async def cmd_more(args):
 
 async def cmd_help():
     logger.debug("Showing help...")
-    logger.info("Commands: refresh, load, more [id], help, exit")
+    logger.info("Commands: refresh, load, more <id>, help, exit, filter <type> <string>")
     state["force_scroll"] = True
+    
+    
+async def cmd_filter(args):
+    if state['filter_task'] and not state['filter_task'].done():
+        logger.warning("Already running filter command")
+        return
+        
+    async def _run():
+        try:
+            if not args:
+                logger.warning("Pleace specify key and value as filter arguments")
+                return
+            
+            filters = dict(zip(args[::2], args[1::2]))
+                    
+            logger.info("Filtering events...")
+            events = load_events()
+            
+            if not events:
+                logger.warning("No events saved, run 'refresh' first")
+                return
+                
+            logger.info(f"filters: {filters}")
+            result = query_events(events, filters=filters)
+            
+            for event in result:
+                logger.info(f"FILT: {event['id']} - {event['name']} - {event['summary']}")
+        
+        except (FileNotFoundError, json.JSONDecodeError):
+            logger.error("No events saved or file corrupt, run 'refresh' first")
+            raise
+        
+        finally:
+            state['filter_task'] = None
+    
+    state['filter_task'] = asyncio.create_task(_run())
+    state['force_scroll'] = True
 
 
 async def handle_command(text, app):
@@ -152,5 +193,11 @@ async def handle_command(text, app):
     if cmd == "help":
         await cmd_help()
         return
+    
+    if cmd == "filter":
+        await cmd_filter(args)
+        return
 
     logger.warning("Unknown command")
+
+
