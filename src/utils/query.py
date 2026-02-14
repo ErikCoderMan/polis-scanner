@@ -20,6 +20,7 @@ def parse_query(args: list[str] | str) -> dict:
     filters =  {}
     group_by = ""
     limit = 0
+    sort = ""
     
     match = re.search(r"--text\s+(.*?)(?=\s+--\w+|$)", args)
     text = match.group(1) if match else None
@@ -37,6 +38,9 @@ def parse_query(args: list[str] | str) -> dict:
     match = re.search(r"--limit\s+(.*?)(?=\s+--\w+|$)", args)
     limit = match.group(1) if match else None
     
+    match = re.search(r"--sort\s+(.*?)(?=\s+--\w+|$)", args)
+    sort = match.group(1) if sort else None
+    
     if limit:
         try:
             limit = int(limit)
@@ -50,7 +54,8 @@ def parse_query(args: list[str] | str) -> dict:
         "fields": fields,
         "filters": filters,
         "group": group_by,
-        "limit": limit
+        "limit": limit,
+        "sort": sort
     }
     
     return result
@@ -115,6 +120,10 @@ def query_events(
     sort: str | None = None,
     limit: int | None = None,
 ) -> list:
+    
+    if all(v is None for v in(text, filters, group_by, sort)):
+        logger.error("no search parameters provided")
+        return []
 
     if fields is None:
         fields = ["name", "summary", "type", "location.name"]
