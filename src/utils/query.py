@@ -1,5 +1,59 @@
 from collections import Counter
 from typing import Any
+import re
+
+from src.core.logger import get_logger
+
+logger = get_logger(__name__)
+
+# ----------------------------
+# parse
+# ----------------------------
+
+def parse_query(args: list[str] | str) -> dict:
+    args = " ".join([arg for arg in args]) if isinstance(args, list) else args
+    if not args:
+        return
+        
+    text = ""
+    fields =  []
+    filters =  {}
+    group_by = ""
+    limit = 0
+    
+    match = re.search(r"--text\s+(.*?)(?=\s+--\w+|$)", args)
+    text = match.group(1) if match else None
+    
+    match = re.search(r"--fields\s+(.*?)(?=\s+--\w+|$)", args)
+    fields = match.group(1).split() if match else None
+    
+    match = re.search(r"--filters\s+(.*?)(?=\s+--\w+|$)", args)
+    filters = match.group(1).split() if match else None
+    filters = dict(zip(filters[::2], filters[1::2])) if filters else None
+    
+    match = re.search(r"--group\s+(.*?)(?=\s+--\w+|$)", args)
+    group_by = match.group(1) if match else None
+    
+    match = re.search(r"--limit\s+(.*?)(?=\s+--\w+|$)", args)
+    limit = match.group(1) if match else None
+    
+    if limit:
+        try:
+            limit = int(limit)
+    
+        except ValueError:
+            logger.error("limit has to be integer")
+            raise
+    
+    result = {
+        "text": text,
+        "fields": fields,
+        "filters": filters,
+        "group": group_by,
+        "limit": limit
+    }
+    
+    return result
 
 
 # ----------------------------
