@@ -138,7 +138,7 @@ def query_events(
         logger.error("no search parameters provided")
         return []
 
-    if fields == "all":
+    if not fields or fields == "all":
         fields = ["name", "summary", "type", "location.name"]
 
     # ----------------------------
