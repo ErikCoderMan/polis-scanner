@@ -181,7 +181,7 @@ async def cmd_find(args):
         result = query_events(events=events, text=text)
 
         for event in result[::-1]:
-            logger.info(f"FIND: {event['id']} - {event['name']} - {event['summary']}")
+            logger.info(f"FIND (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
 
         logger.info(f"Returned {len(result)} events")
 
@@ -214,7 +214,7 @@ async def cmd_search(args):
         )
 
         for event in result[::-1]:
-            logger.info(f"SEAR: {event['id']} - {event['name']} - {event['summary']}")
+            logger.info(f"SEAR (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
 
         logger.info(f"Returned {len(result)} events")
 
@@ -253,8 +253,8 @@ async def cmd_rank(args):
             logger.info("No ranking results")
             return
 
-        for value, count in result[::-1]:
-            logger.info(f"RANK: {value} ({count})")
+        for row in result[::-1]:
+            logger.info(f"{row['group']} (count={row['count']}, avg_score={row['avg_score']})")
 
         logger.info(f"Returned {len(result)} ranked groups")
 
