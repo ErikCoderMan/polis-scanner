@@ -15,7 +15,10 @@ class LogBuffer:
     def get_text(self) -> str:
         with self.lock:
             return "\n".join(self.lines)
-
-
+    
+    def clear(self):
+        with self.lock:
+            self.lines.clear()
+            
 # global singleton
 log_buffer = LogBuffer()

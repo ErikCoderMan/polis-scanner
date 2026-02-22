@@ -260,6 +260,12 @@ async def cmd_rank(args):
 
     await _run()
 
+async def cmd_clear(args=None):
+    async def _run():
+        logger.info("Clearing screen...") # useless
+        log_buffer.clear()
+
+    await _run()
 
 async def handle_command(text, app):
     parts = text.strip().lower().split(" ", 1)
@@ -282,6 +288,7 @@ async def handle_command(text, app):
         "find": cmd_find,
         "search": cmd_search,
         "rank": cmd_rank,
+        "clear": cmd_clear,
     }
 
     handler = command_map.get(cmd)
