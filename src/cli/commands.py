@@ -8,7 +8,6 @@ from src.utils.query import query_events, parse_query
 
 logger = get_logger(__name__)
 
-
 state = {
     "refresh_task": None,
     "load_task": None,
@@ -20,7 +19,28 @@ state = {
 }
 
 
-async def cmd_help():
+async def _run_command_task(task_key, coro):
+    """Unified task runner"""
+
+    if state.get(task_key) and not state[task_key].done():
+        logger.warning("Already running command")
+        return
+
+    task = asyncio.create_task(coro())
+    state[task_key] = task
+
+    try:
+        await task
+    finally:
+        state["force_scroll"] = True
+        state[task_key] = None
+
+
+# -------------------------
+# Command implementations
+# -------------------------
+
+async def cmd_help(args=None):
     logger.info("""Showing help...
 Commands:
     refresh
@@ -75,264 +95,184 @@ Other:
         Quit the program.
     """)
 
-    state["force_scroll"] = True
 
-
-async def cmd_refresh():
-    if state["refresh_task"] and not state["refresh_task"].done():
-        logger.warning("Already refreshing events!")
-        return
-
+async def cmd_refresh(args=None):
     async def _run():
-        try:
-            logger.info("Refreshing events (fetching)...")
-            events = await refresh_events()
+        logger.info("Refreshing events (fetching)...")
 
-            if not events:
-                logger.info("No new events")
-                return
+        events = await refresh_events()
 
-            for event in events:
-                logger.info(
-                    f"NEW: {event['id']} - {event['name']} - {event['summary']}"
-                )
-            
-            logger.info(f"Returned {len(events)} events")
-        
-        except PolisAPIError:
-            logger.error("Could not update events (API failure)")
-            raise
-        
-        finally:
-            state['refresh_task'] = None
+        if not events:
+            logger.info("No new events")
+            return
 
-    state["refresh_task"] = asyncio.create_task(_run())
-    state["force_scroll"] = True
+        for event in events:
+            logger.info(
+                f"NEW: {event['id']} - {event['name']} - {event['summary']}"
+            )
+
+        logger.info(f"Returned {len(events)} events")
+
+    await _run()
 
 
-async def cmd_load():
-    if state["load_task"] and not state["load_task"].done():
-        logger.warning("Already loading events")
-        return
-    
+async def cmd_load(args=None):
     async def _run():
-        try:
-            logger.info("Loading events...")
-            events = load_events()
-            
-            if not events:
-                logger.warning("No events saved, run 'refresh' instead")
-                return
-            
-            for event in events:
-                logger.info(
-                    f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
-                )
-            
-            logger.info(f"Returned {len(events)} events")
-                
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.error("No events saved or file corrupt, run 'refresh' instead")
-            raise
-        
-        finally:
-            state['load_task'] = None
-    
-    state['load_task'] = asyncio.create_task(_run())
-    state['force_scroll'] = True
+        logger.info("Loading events...")
+        events = load_events()
+
+        if not events:
+            logger.warning("No events saved, run 'refresh' instead")
+            return
+
+        for event in events:
+            logger.info(
+                f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
+            )
+
+        logger.info(f"Returned {len(events)} events")
+
+    await _run()
 
 
 async def cmd_more(args):
-    if state['more_task'] and not state['more_task'].done():
-        logger.warning("Already running more command")
-        return
-    
     async def _run():
-        try:
-            if not args:
-                logger.warning("Please specify event id as argument, for example: more 123456")
-                return
-            
-            target_event = args[0] if len(args) > 0 else None
-            
-            logger.info("Getting more info about event...")
-            events = load_events()
-            
-            if not events:
-                logger.warning("No events saved, run 'refresh' first")
-                return
-            
-            event = [e for e in events if str(e.get("id", None)) == target_event] 
-            
-            if not event:
-                logger.warning("Target event id does not exist in stored events")
-                return
-            
-            for k, v in event[0].items():
-                logger.info(f"{k}: {v}")
-        
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.error("No events saved or file corrupt, run 'refresh' first")
-            raise
-        
-        finally:
-            state['more_task'] = None
-    
-    state['more_task'] = asyncio.create_task(_run())
-    state['force_scroll'] = True
+        if not args:
+            logger.warning("Please specify event id")
+            return
+
+        target = args[0]
+
+        logger.info("Getting more info about event...")
+        events = load_events()
+
+        if not events:
+            logger.warning("No events saved, run 'refresh' first")
+            return
+
+        event = [e for e in events if str(e.get("id")) == target]
+
+        if not event:
+            logger.warning("Target event id does not exist")
+            return
+
+        for k, v in event[0].items():
+            logger.info(f"{k}: {v}")
+
+    await _run()
 
 
 async def cmd_find(args):
-    if state['find_task'] and not state['find_task'].done():
-        logger.warning("Already running filter command")
-        return
-        
     async def _run():
-        try:
-            if not args:
-                logger.warning("Please enter text to find as argument")
-                return
-            
-            text = " ".join([arg for arg in args])
-            logger.info(f"text: {text}")
-                    
-            logger.info("Finding events (stored)...")
-            events = load_events()
-            
-            if not events:
-                logger.warning("No events saved, run 'refresh' first")
-                return
-            
-            result = query_events(events=events, text=text)
-            
-            for event in result[::-1]:
-                logger.info(f"FIND: {event['id']} - {event['name']} - {event['summary']}")
-            
-            logger.info(f"Returned {len(result)} events")
-        
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.error("No events saved or file corrupt, run 'refresh' first")
-            raise
-        
-        finally:
-            state['find_task'] = None
-    
-    state['find_task'] = asyncio.create_task(_run())
-    state['force_scroll'] = True
+        if not args:
+            logger.warning("Please enter text to find")
+            return
+
+        text = " ".join(args)
+
+        logger.info(f"Finding events (stored)...")
+
+        events = load_events()
+
+        if not events:
+            logger.warning("No events saved, run 'refresh' first")
+            return
+
+        result = query_events(events=events, text=text)
+
+        for event in result[::-1]:
+            logger.info(f"FIND (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
+
+        logger.info(f"Returned {len(result)} events")
+
+    await _run()
 
 
 async def cmd_search(args):
-    if state['search_task'] and not state['search_task'].done():
-        logger.warning("Already running search command")
-        return
-        
     async def _run():
-        try:
-            if not args:
-                logger.warning("Please enter atleast one search argument")
-                return
-            
-            query = parse_query(args)
-            logger.info(f"query: {query}")
-            
-            logger.info("Searching for events (stored)...")
-            events = load_events()
-            
-            if not events:
-                logger.warning("No events saved, run 'refresh' first")
-                return
-                
-            result = query_events(
-                events=events,
-                text=query["text"],
-                fields=query["fields"],
-                filters=query["filters"],
-                group_by=None,
-                limit=query["limit"]
-                )
-            
-            for event in result[::-1]:
-                logger.info(f"SEAR: {event['id']} - {event['name']} - {event['summary']}")
-            
-            logger.info(f"Returned {len(result)} events")
-        
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.error("No events saved or file corrupt, run 'refresh' first")
-            raise
-        
-        finally:
-            state['search_task'] = None
-    
-    state['search_task'] = asyncio.create_task(_run())
-    state['force_scroll'] = True
-    
-    
+        if not args:
+            logger.warning("Please enter search argument")
+            return
+
+        query = parse_query(args)
+
+        logger.info(f"query: {query}")
+
+        events = load_events()
+
+        if not events:
+            logger.warning("No events saved")
+            return
+
+        result = query_events(
+            events=events,
+            text=query["text"],
+            fields=query["fields"],
+            filters=query["filters"],
+            group_by=None,
+            limit=query["limit"]
+        )
+
+        for event in result[::-1]:
+            logger.info(f"SEAR (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
+
+        logger.info(f"Returned {len(result)} events")
+
+    await _run()
+
+
 async def cmd_rank(args):
-    if state['rank_task'] and not state['rank_task'].done():
-        logger.warning("Already running rank command")
-        return
-        
     async def _run():
-        try:
-            if not args:
-                logger.warning("Please provide ranking arguments (ex: --group type)")
-                return
-            
-            query = parse_query(args)
-            logger.info(f"query: {query}")
-            
-            if not query.get("group"):
-                logger.warning("rank requires --group")
-                return
-            
-            logger.info("Ranking events (stored)...")
-            events = load_events()
-            
-            if not events:
-                logger.warning("No events saved, run 'refresh' first")
-                return
-                
-            result = query_events(
-                events=events,
-                text=query["text"],
-                fields=query["fields"],
-                filters=query["filters"],
-                group_by=query["group"],
-                sort=query["sort"],
-                limit=query["limit"]
-            )
-            
-            if not result:
-                logger.info("No ranking results")
-                return
+        if not args:
+            logger.warning("Please provide ranking arguments")
+            return
 
-            # result = list[tuple[str, int]]
-            for value, count in result[::-1]:
-                logger.info(f"RANK: {value} ({count})")
-            
-            logger.info(f"Returned {len(result)} ranked groups")
-        
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.error("No events saved or file corrupt, run 'refresh' first")
-            raise
-        
-        finally:
-            state['rank_task'] = None
-    
-    state['rank_task'] = asyncio.create_task(_run())
-    state['force_scroll'] = True
+        query = parse_query(args)
 
+        if not query.get("group"):
+            logger.warning("rank requires --group")
+            return
+
+        events = load_events()
+
+        if not events:
+            logger.warning("No events saved")
+            return
+
+        result = query_events(
+            events=events,
+            text=query["text"],
+            fields=query["fields"],
+            filters=query["filters"],
+            group_by=query["group"],
+            sort=query["sort"],
+            limit=query["limit"]
+        )
+
+        if not result:
+            logger.info("No ranking results")
+            return
+
+        for row in result[::-1]:
+            logger.info(f"{row['group']} (count={row['count']}, avg_score={row['avg_score']})")
+
+        logger.info(f"Returned {len(result)} ranked groups")
+
+    await _run()
+
+async def cmd_clear(args=None):
+    async def _run():
+        logger.info("Clearing screen...") # useless
+        log_buffer.clear()
+
+    await _run()
 
 async def handle_command(text, app):
     parts = text.strip().lower().split(" ", 1)
+
     cmd = parts[0]
-    args = parts[1] if len(parts) > 1 else None
-    
-    logger.debug(f"parts: cmd={cmd}, args={args if args else None}")
-    
-    if args:
-        args = [a.strip() for a in args.split(" ")]
-    
+    args = parts[1].split() if len(parts) > 1 else []
+
     if not cmd:
         return
 
@@ -340,34 +280,23 @@ async def handle_command(text, app):
         app.exit()
         return
 
-    if cmd == "refresh":
-        await cmd_refresh()
-        return
-    
-    if cmd == "load":
-        await cmd_load()
-        return
+    command_map = {
+        "refresh": cmd_refresh,
+        "load": cmd_load,
+        "more": cmd_more,
+        "help": cmd_help,
+        "find": cmd_find,
+        "search": cmd_search,
+        "rank": cmd_rank,
+        "clear": cmd_clear,
+    }
+
+    handler = command_map.get(cmd)
+
+    if handler:
+        await handler(args)
+        state["force_scroll"] = True
+    else:
+        logger.warning("Unknown command")
         
-    if cmd == "more":
-        await cmd_more(args)
-        return
-
-    if cmd == "help":
-        await cmd_help()
-        return
-    
-    if cmd == "find":
-        await cmd_find(args)
-        return
-    
-    if cmd == "search":
-        await cmd_search(args)
-        return
-    
-    if cmd == "rank":
-        await cmd_rank(args)
-        return
-
-    logger.warning("Unknown command")
-
-
+        

@@ -5,6 +5,9 @@ from prompt_toolkit.layout import Layout, WindowAlign
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.widgets import TextArea
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.application.current import get_app
+from prompt_toolkit.document import Document
 
 from src.ui.log_buffer import log_buffer
 from src.core.config import settings
@@ -17,13 +20,16 @@ output_field = TextArea(
     scrollbar=True,
     focusable=True,
     wrap_lines=True,
-    read_only=True
+    read_only=True,
+    multiline=True
 )
 
+history = InMemoryHistory()
 input_field = TextArea(
     height=1,
     prompt="> ",
-    multiline=False
+    multiline=False,
+    history=history
 )
 
 # ----------------------------
@@ -71,53 +77,45 @@ layout = Layout(root_container, focused_element=input_field)
 # ----------------------------
 # Log updater + title animation
 # ----------------------------
-async def ui_updater(app, state):
-    """
-    Updates the output_field with new logs and animates the title bar.
-    Ensures mouse scrolling works freely while still auto-scrolling when needed.
-    """
-    last_line = None
-    
-    siren_interval = 0.5
-    last_siren_tick = time.monotonic()
+
+async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
+    last_snapshot = ""
+    title_timer = time.monotonic()
 
     while True:
+        snapshot = log_buffer.get_text()
         now = time.monotonic()
-        lines = log_buffer.lines
-        new_text = "\n".join(lines)
+        
+        # Title animation
+        if now - title_timer >= title_sleep:
+            title_bar.tick_siren()
+            title_bar.update_lines(len(snapshot.splitlines()))
+            title_timer = now
+        
+        if snapshot != last_snapshot:
 
-        buf = output_field.buffer
+            buf = output_field.buffer
+            doc = buf.document
 
-        # Determine if the cursor is already at the bottom
-        lines_from_bottom = buf.document.line_count - buf.document.cursor_position_row - 1
-        at_bottom = lines_from_bottom <= 2
+            # Tail follow only if user is already near bottom
+            at_bottom = doc.cursor_position >= max(len(doc.text) - 5, 0)
 
-        # Update output_field only if last line changed
-        if lines and lines[-1] != last_line:
-            # Decide cursor position: move to end only if force_scroll or already at bottom
             if state.get("force_scroll", False) or at_bottom:
-                cursor_pos = len(new_text)
+                cursor = len(snapshot)
                 state["force_scroll"] = False
-                
             else:
-                cursor_pos = buf.document.cursor_position  # preserve cursor for user scrolling
+                cursor = doc.cursor_position
 
-            # Update the buffer
             buf.set_document(
-                buf.document.__class__(new_text, cursor_position=cursor_pos),
+                Document(
+                    snapshot,
+                    cursor_position=min(cursor, len(snapshot))
+                ),
                 bypass_readonly=True
             )
 
-            last_line = lines[-1]
-
-        # Update title bar animation and line count
-        if now - last_siren_tick >= siren_interval:
-            title_bar.tick_siren()
-            last_siren_tick = now
-            title_bar.update_lines(len(lines))
-
-        # Force redraw of UI so title updates even without user input
+            last_snapshot = snapshot
+            
         app.invalidate()
-
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.5)
 

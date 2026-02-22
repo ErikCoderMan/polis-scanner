@@ -39,7 +39,8 @@ def parse_query(args: list[str] | str) -> dict:
     limit = match.group(1) if match else None
     
     match = re.search(r"--sort\s+(.*?)(?=\s+--\w+|$)", args)
-    sort = match.group(1) if sort else None
+    sort = match.group(1) if match else None
+    
     
     if limit:
         try:
@@ -51,7 +52,7 @@ def parse_query(args: list[str] | str) -> dict:
     
     result = {
         "text": text,
-        "fields": fields,
+        "fields": fields if fields else "all",
         "filters": filters,
         "group": group_by,
         "limit": limit,
@@ -95,13 +96,25 @@ def event_text_blob(event: dict, fields: list[str]) -> str:
     return " ".join(values)
 
 
-def score_event(event: dict, words: list[str], fields: list[str]) -> int:
-    blob = event_text_blob(event, fields)
+def score_query_event(event, query, fields):
     score = 0
 
-    for w in words:
-        if w in blob:
-            score += 1
+    # Text scoring
+    if query.get("text"):
+        blob = event_text_blob(event, fields)
+        words = normalize_text(query["text"]).split()
+
+        for w in words:
+            if w in blob:
+                score += 1
+
+    # Filter soft bonus scoring (optional)
+    if query.get("filters"):
+        for f, val in query["filters"].items():
+            field_value = normalize_text(get_field(event, f))
+
+            if normalize_text(val) in field_value:
+                score += 1
 
     return score
 
@@ -120,70 +133,149 @@ def query_events(
     sort: str | None = None,
     limit: int | None = None,
 ) -> list:
-    
-    if all(v is None for v in(text, filters, group_by, sort)):
+
+    if all(v is None for v in (text, filters, group_by, sort)):
         logger.error("no search parameters provided")
         return []
 
-    if fields is None:
+    if not fields or fields == "all":
         fields = ["name", "summary", "type", "location.name"]
 
-    # ---- filter stage ----
-    if filters:
-        filtered = []
-        for e in events:
-            ok = True
+    # ----------------------------
+    # Candidate filtering stage (hard filter)
+    # ----------------------------
+
+    filtered = []
+
+    for e in events:
+        ok = True
+
+        if filters:
             for f, val in filters.items():
                 field_value = normalize_text(get_field(e, f))
+
                 if normalize_text(val) not in field_value:
                     ok = False
                     break
 
-            if ok:
-                filtered.append(e)
-        events = filtered
+        if ok:
+            filtered.append(e)
 
-    # ---- text search stage ----
+    events = filtered
+    
+    # ----------------------------
+    # Text candidate filtering (hard constraint)
+    # ----------------------------
+
     if text:
-        words = [normalize_text(w) for w in text.split()]
-        scored = []
+        words = normalize_text(text).split()
+        filtered = []
 
         for e in events:
-            s = score_event(e, words, fields)
-            if s > 0:
-                scored.append((s, e))
+            blob = event_text_blob(e, fields)
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        events = [e for _, e in scored]
+            if all(w in blob for w in words):
+                filtered.append(e)
 
-    # ---- group stage (rank) ----
+        events = filtered
+    
+    # ----------------------------
+    # Group stage (rank mode)
+    # ----------------------------
+
     if group_by:
-        counter = Counter()
+        groups = {}
 
         for e in events:
-            val = normalize_text(get_field(e, group_by))
-            if val:
-                counter[val] += 1
+            key = normalize_text(get_field(e, group_by))
+            if not key:
+                continue
 
-        result = list(counter.items())
+            if key not in groups:
+                groups[key] = {
+                    "count": 0,
+                    "score_sum": 0
+                }
 
-        if sort == "-count" or sort is None:
-            result.sort(key=lambda x: x[1], reverse=True)
-        else:
-            result.sort(key=lambda x: x[0])
+            # Beräkna score om text finns
+            query_obj = {
+                "text": text,
+                "filters": filters or {}
+            }
+
+            score = score_query_event(e, query_obj, fields)
+
+            groups[key]["count"] += 1
+            groups[key]["score_sum"] += score
+
+        result = []
+
+        for k, v in groups.items():
+            avg_score = v["score_sum"] / v["count"] if v["count"] > 0 else 0
+
+            result.append({
+                "group": k,
+                "count": v["count"],
+                "avg_score": round(avg_score, 3)
+            })
+
+        # ----------------------------
+        # Sorting (rank mode)
+        # ----------------------------
+
+        if sort == "-count" or not sort:
+            result.sort(key=lambda x: x["count"], reverse=True)
+
+        elif sort == "-score":
+            result.sort(key=lambda x: x["avg_score"], reverse=True)
+
+        elif sort == "group":
+            result.sort(key=lambda x: x["group"])
 
         if limit:
             result = result[:limit]
 
         return result
 
-    # ---- sorting (non-group results) ----
-    if sort == "score":
-        pass  # already sorted by score
-    elif sort == "-datetime":
-        events.sort(key=lambda e: normalize_text(get_field(e, "datetime")), reverse=True)
+    # ----------------------------
+    # Unified scoring stage
+    # ----------------------------
 
-    # ---- limit ----
+    scored_events = []
+
+    query_obj = {
+        "text": text,
+        "filters": filters or {}
+    }
+
+    for e in events:
+        score = score_query_event(e, query_obj, fields)
+
+        if score > 0:
+            event_copy = dict(e)
+            event_copy["score"] = score
+            scored_events.append(event_copy)
+
+    # Sort by score (primary ranking signal)
+    scored_events.sort(key=lambda x: x["score"], reverse=True)
+
+    events = scored_events
+    
+
+    # ----------------------------
+    # Sorting stage (non-group)
+    # ----------------------------
+
+    if sort == "-datetime":
+        events.sort(
+            key=lambda e: normalize_text(get_field(e, "datetime")),
+            reverse=True
+        )
+
+    # ----------------------------
+    # Limit stage
+    # ----------------------------
+
     if limit:
         events = events[:limit]
 
