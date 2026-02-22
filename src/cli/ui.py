@@ -78,12 +78,20 @@ layout = Layout(root_container, focused_element=input_field)
 # Log updater + title animation
 # ----------------------------
 
-async def ui_updater(app, state):
+async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
     last_snapshot = ""
+    title_timer = time.monotonic()
 
     while True:
         snapshot = log_buffer.get_text()
-
+        now = time.monotonic()
+        
+        # Title animation
+        if now - title_timer >= title_sleep:
+            title_bar.tick_siren()
+            title_bar.update_lines(len(snapshot.splitlines()))
+            title_timer = now
+        
         if snapshot != last_snapshot:
 
             buf = output_field.buffer
@@ -107,7 +115,7 @@ async def ui_updater(app, state):
             )
 
             last_snapshot = snapshot
-
+            
         app.invalidate()
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
 
