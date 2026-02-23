@@ -15,10 +15,19 @@ class LogBuffer:
     def get_text(self) -> str:
         with self.lock:
             return "\n".join(self.lines)
-    
+
     def clear(self):
         with self.lock:
             self.lines.clear()
+
+    # make objekt iterable
+    def __iter__(self):
+        with self.lock:
+            return iter(list(self.lines))
+
+    # make len(log_buffer) possible
+    def __len__(self):
+        return len(self.lines)
             
 # global singleton
 log_buffer = LogBuffer()
