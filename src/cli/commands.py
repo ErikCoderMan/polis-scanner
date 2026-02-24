@@ -9,33 +9,10 @@ from src.utils.query import query_events, parse_query, parse_interval
 logger = get_logger(__name__)
 
 state = {
-    "refresh_task": None,
-    "load_task": None,
-    "more_task": None,
-    "find_task": None,
-    "search_task": None,
-    "rank_task": None,
     "poll_task": None,
     "poll_stop": None,
     "force_scroll": False
 }
-
-
-async def _run_command_task(task_key, coro):
-    """Unified task runner"""
-
-    if state.get(task_key) and not state[task_key].done():
-        logger.warning("Already running command")
-        return
-
-    task = asyncio.create_task(coro())
-    state[task_key] = task
-
-    try:
-        await task
-    finally:
-        state["force_scroll"] = True
-        state[task_key] = None
 
 
 # -------------------------
