@@ -122,7 +122,7 @@ async def cmd_refresh(args=None, interactive=True):
 
         for event in events:
             log_buffer.write(
-                f"NEW: {event['id']} - {event['name']} - {event['summary']}"
+                f"REFRESH: {event['id']} - {event['name']} - {event['summary']}"
             )
 
         logger.info(f"Returned {len(events)} events")
@@ -228,7 +228,7 @@ async def cmd_search(args, interactive=True):
         )
 
         for event in result[::-1]:
-            log_buffer.write(f"SEAR: {event['id']} - {event['name']} - {event['summary']}")
+            log_buffer.write(f"SEARCH: {event['id']} - {event['name']} - {event['summary']}")
 
         logger.info(f"Returned {len(result)} events")
 
@@ -351,7 +351,12 @@ async def cmd_poll(args, interactive=True):
             
             try:
                 while True:
-                    await refresh_events() # can be replaced with refresh_events function for less output if prefered
+                    new_events = await refresh_events()
+                    if new_events:
+                        for event in new_events:
+                            log_buffer.write(
+                                f"POLL: {event['id']} - {event['name']} - {event['summary']}"
+                            )
                     
                     try:
                         await asyncio.wait_for(stop_event.wait(), timeout=query['interval_s'])
@@ -366,7 +371,7 @@ async def cmd_poll(args, interactive=True):
             finally:
                 state["poll_task"] = None
                 state["poll_stop"] = None
-                logger.info("Poll loop exited")
+                logger.debug("Poll loop exited")
         
         if interactive:
             task = asyncio.create_task(poll_loop())
