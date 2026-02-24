@@ -11,6 +11,7 @@ def _load_dotenv():
     dev_env = Path.cwd() / ".env"
     if dev_env.exists():
         load_dotenv(dev_env)
+        
     # 2. Fallback to installed version in home folder
     else:
         home_env = Path.home() / ".polis-scanner" / ".env"
@@ -29,7 +30,7 @@ class Settings:
     logs_dir: Path
     cache_dir: Path
     polis_event_url: str
-    poll_interval_s: int
+    poll_interval: str # f.e: "100s", "45m", "1h", "3d" 
     http_timeout_s: int
 
     def __post_init__(self):
@@ -62,7 +63,7 @@ def load_settings() -> Settings:
         logs_dir=logs_dir,
         cache_dir=cache_dir,
         polis_event_url=os.environ.get("POLIS_SCANNER_POLIS_EVENT_URL", "https://polisen.se/api/events"),
-        poll_interval_s = os.environ.get("POLIS_SCANNER_POLL_INTERVALL_S", 60),
+        poll_interval = os.environ.get("POLIS_SCANNER_POLL_INTERVAL", "5m"),
         http_timeout_s = os.environ.get("POLIS_SCANNER_HTTP_TIMEOUT_S", 10)
     )
     return settings

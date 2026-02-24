@@ -51,7 +51,7 @@ Example
     POLIS_SCANNER_LOGS_DIR=data/logs
     POLIS_SCANNER_CACHE_DIR=data/cache
     POLIS_SCANNER_POLIS_EVENT_URL=https://polisen.se/api/events
-    POLIS_SCANNER_POLL_INTERVALL_S=60
+    POLIS_SCANNER_POLL_INTERVAL=120s
     POLIS_SCANNER_HTTP_TIMEOUT_S=10
 
 ## Running the application
@@ -72,52 +72,88 @@ depending on your system.
 Commands:
     refresh
         Fetch the latest events from the API.
+
+    poll [interval]
+        Starts repeated execution of the refresh command to fetch new events
+        automatically while pausing between requests.
+
+        interval is formatted as <int>[s|m|h|d]
+        (seconds, minutes, hours, days).
+        Example values: 30s, 5m, 1h, 2d.
+        
+        Recomended minimum interval value: 60s.
+        Minimum allowed interval: 10s (however this can be bypassed by adding 
+        '--force True' to arguments even though it is not recommended
+        to fetch so often and you can expect to get blocked fast).
+
     load
-        Display stored events from local storage.
+        Display events stored in local storage.
+
     more <id>
         Show full details for a specific event by its ID.
+
     find <text>
         Quick search for events containing the given text.
-        Results are displayed in reverse order; the best matches appear at the bottom.
+        Results are ranked by relevance; best matches are shown last.
+
     search [options]
-        Advanced search with filters, sorting, and limits.
-        Results are displayed in reverse order; top match appears last.
+        Advanced search supporting filters, sorting, and result limits.
+
+        Results are ranked by relevance score by default.
+
     rank --group <field> [options]
         Show grouped statistics (counts) for a specified field.
+
         Filters (--text, --fields, --filters) are applied before grouping.
-        Ranked groups are displayed in reverse order; group with highest count appears at the bottom.
+
+        Groups are sorted in reverse order by default, with the
+        highest-count group appearing last.
 
 Search options:
     --text <text>
         Search for specific words in event fields (default behavior).
+
     --fields <field1 field2 ...>
-        Specify which event fields to search in (default: name, summary, type, location.name).
+        Specify event fields to search in.
+        Default: name, summary, type, location.name.
+
     --filters <field1 value1 field2 value2 ...>
-        Filter events by exact matches for specified fields.
+        Filter events by exact field-value matches.
+
     --sort <value>
         score      - sort by relevance score (default)
-        -datetime  - sort by datetime, newest first
+        datetime   - sort by datetime, newest events first
+
     --limit <n>
-        Limit the number of results returned.
+        Limit the number of returned results.
 
 Rank options:
     --group <field>
-        Specify the field to group by for statistics.
+        Field used for grouping statistics.
+
     --sort <value>
-        -count     - sort groups by count (default)
+        count     - sort groups by count (default)
         <field>    - sort groups alphabetically by field value
+
     --text <text>
         Filter events by text before grouping.
+
     --fields <field1 field2 ...>
-        Specify which fields to search in for filtering before grouping.
+        Fields used when filtering by text.
+
     --filters <field1 value1 ...>
-        Filter events by exact matches before grouping.
+        Exact field-value filters applied before grouping.
+
     --limit <n>
         Limit the number of ranked groups returned.
 
 Other:
     help
         Display this help message.
+
+    clear
+        Clears the output screen.
+
     exit
         Quit the program.
 ```

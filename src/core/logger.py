@@ -42,7 +42,7 @@ def get_logger(name: str, log_file: Path = None) -> logging.Logger:
     ui.setLevel(logging.INFO)
     ui.setFormatter(
         PrefixFormatter(
-            "%(asctime)s %(prefix)s: %(message)s",
+            "%(asctime)s %(prefix)s | %(message)s",
             datefmt="%H:%M:%S"
         )
     )

@@ -6,11 +6,16 @@ class LogBuffer:
     def __init__(self, max_lines: int = 10_000):
         self.lines = deque(maxlen=max_lines)
         self.lock = Lock()
+        self.interactive_mode = True
 
     def write(self, text: str):
         with self.lock:
             for line in text.rstrip().splitlines():
-                self.lines.append(line)
+                if not self.interactive_mode:
+                    print(line, flush=True)
+                    
+                else:
+                    self.lines.append(line)
 
     def get_text(self) -> str:
         with self.lock:
