@@ -39,7 +39,7 @@ class TitleBar:
     def __init__(self):
         self.siren_patterns = ["*-*-*-", "-*-*-*"]
         self.siren_index = 0
-        self.text = "00:00:00 | App Name (CLI) v0.0.0 | 0 lines"
+        self.text = "00:00:00 | app v0.0.0 (CLI) | 0 lines"
         self.control = FormattedTextControl(self.get_text, focusable=False)
 
     def get_text(self):
@@ -48,7 +48,7 @@ class TitleBar:
 
     def update_lines(self, num_lines):
         clock = datetime.now().strftime("%H:%M:%S")
-        self.text = f"{clock} | {settings.app_name} (CLI) v{settings.version} | {num_lines} lines "
+        self.text = f"{clock} | {settings.app_name} v{settings.version} (CLI) | {num_lines} lines "
 
     def tick_siren(self):
         self.siren_index = (self.siren_index + 1) % len(self.siren_patterns)

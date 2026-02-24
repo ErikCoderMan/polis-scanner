@@ -1,10 +1,12 @@
 import asyncio
 from prompt_toolkit.application import Application
-from .ui import layout, ui_updater
-from .commands import state
-from .keybindings import kb
+
 from src.core.logger import get_logger
 from src.core.config import settings
+from src.commands.commands import state
+
+from .ui import layout, ui_updater
+from .keybindings import kb
 
 logger = get_logger(__name__)
 
@@ -22,11 +24,5 @@ async def run_cli():
 
     asyncio.create_task(ui_updater(app, state))
     await app.run_async()
-
-    # wait background job before exit
-    task = state.get("refresh_task")
-    if task and not task.done():
-        logger.info("Waiting for running refresh to finish...")
-        await task
 
     return 0
