@@ -4,36 +4,15 @@ from src.services.fetcher import refresh_events, load_events
 from src.api.polis import PolisAPIError
 from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
-from src.utils.query import query_events, parse_query
+from src.utils.query import query_events, parse_query, parse_interval
 
 logger = get_logger(__name__)
 
 state = {
-    "refresh_task": None,
-    "load_task": None,
-    "more_task": None,
-    "find_task": None,
-    "search_task": None,
-    "rank_task": None,
+    "poll_task": None,
+    "poll_stop": None,
     "force_scroll": False
 }
-
-
-async def _run_command_task(task_key, coro):
-    """Unified task runner"""
-
-    if state.get(task_key) and not state[task_key].done():
-        logger.warning("Already running command")
-        return
-
-    task = asyncio.create_task(coro())
-    state[task_key] = task
-
-    try:
-        await task
-    finally:
-        state["force_scroll"] = True
-        state[task_key] = None
 
 
 # -------------------------
@@ -45,61 +24,96 @@ async def cmd_help(args=None):
 Commands:
     refresh
         Fetch the latest events from the API.
+
+    poll [interval]
+        Starts repeated execution of the refresh command to fetch new events
+        automatically while pausing between requests.
+
+        interval is formatted as <int>[s|m|h|d]
+        (seconds, minutes, hours, days).
+        Example values: 30s, 5m, 1h, 2d.
+        
+        Recomended minimum interval value: 60s.
+        Minimum allowed interval: 10s (however this can be bypassed by adding 
+        '--force True' to arguments even though it is not recommended
+        to fetch so often and you can expect to get blocked fast).
+
     load
-        Display stored events from local storage.
+        Display events stored in local storage.
+
     more <id>
         Show full details for a specific event by its ID.
+
     find <text>
         Quick search for events containing the given text.
-        Results are displayed in reverse order; the best matches appear at the bottom.
+        Results are ranked by relevance; best matches are shown last.
+
     search [options]
-        Advanced search with filters, sorting, and limits.
-        Results are displayed in reverse order; top match appears last.
+        Advanced search supporting filters, sorting, and result limits.
+
+        Results are ranked by relevance score by default.
+
     rank --group <field> [options]
         Show grouped statistics (counts) for a specified field.
+
         Filters (--text, --fields, --filters) are applied before grouping.
-        Ranked groups are displayed in reverse order; group with highest count appears at the bottom.
+
+        Groups are sorted in reverse order by default, with the
+        highest-count group appearing last.
 
 Search options:
     --text <text>
         Search for specific words in event fields (default behavior).
+
     --fields <field1 field2 ...>
-        Specify which event fields to search in (default: name, summary, type, location.name).
+        Specify event fields to search in.
+        Default: name, summary, type, location.name.
+
     --filters <field1 value1 field2 value2 ...>
-        Filter events by exact matches for specified fields.
+        Filter events by exact field-value matches.
+
     --sort <value>
         score      - sort by relevance score (default)
-        -datetime  - sort by datetime, newest first
+        datetime   - sort by datetime, newest events first
+
     --limit <n>
-        Limit the number of results returned.
+        Limit the number of returned results.
 
 Rank options:
     --group <field>
-        Specify the field to group by for statistics.
+        Field used for grouping statistics.
+
     --sort <value>
-        -count     - sort groups by count (default)
+        count     - sort groups by count (default)
         <field>    - sort groups alphabetically by field value
+
     --text <text>
         Filter events by text before grouping.
+
     --fields <field1 field2 ...>
-        Specify which fields to search in for filtering before grouping.
+        Fields used when filtering by text.
+
     --filters <field1 value1 ...>
-        Filter events by exact matches before grouping.
+        Exact field-value filters applied before grouping.
+
     --limit <n>
         Limit the number of ranked groups returned.
 
 Other:
     help
         Display this help message.
+
+    clear
+        Clears the output screen.
+
     exit
         Quit the program.
     """)
 
 
-async def cmd_refresh(args=None):
+async def cmd_refresh(args=None, interactive=True):
     async def _run():
         logger.info("Refreshing events (fetching)...")
-
         events = await refresh_events()
 
         if not events:
@@ -107,7 +121,7 @@ async def cmd_refresh(args=None):
             return
 
         for event in events:
-            logger.info(
+            log_buffer.write(
                 f"NEW: {event['id']} - {event['name']} - {event['summary']}"
             )
 
@@ -116,9 +130,9 @@ async def cmd_refresh(args=None):
     await _run()
 
 
-async def cmd_load(args=None):
+async def cmd_load(args=None, interactive=True):
     async def _run():
-        logger.info("Loading events...")
+        logger.info("Loading events (stored)...")
         events = load_events()
 
         if not events:
@@ -126,7 +140,7 @@ async def cmd_load(args=None):
             return
 
         for event in events:
-            logger.info(
+            log_buffer.write(
                 f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
             )
 
@@ -135,7 +149,7 @@ async def cmd_load(args=None):
     await _run()
 
 
-async def cmd_more(args):
+async def cmd_more(args, interactive=True):
     async def _run():
         if not args:
             logger.warning("Please specify event id")
@@ -157,21 +171,21 @@ async def cmd_more(args):
             return
 
         for k, v in event[0].items():
-            logger.info(f"{k}: {v}")
+            log_buffer.write(f"{k}: {v}")
 
     await _run()
 
 
-async def cmd_find(args):
+async def cmd_find(args, interactive=True):
     async def _run():
         if not args:
             logger.warning("Please enter text to find")
             return
 
         text = " ".join(args)
+        logger.debug(f"query text: {text}")
 
         logger.info(f"Finding events (stored)...")
-
         events = load_events()
 
         if not events:
@@ -181,27 +195,27 @@ async def cmd_find(args):
         result = query_events(events=events, text=text)
 
         for event in result[::-1]:
-            logger.info(f"FIND (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
+            log_buffer.write(f"FIND: {event['id']} - {event['name']} - {event['summary']}")
 
         logger.info(f"Returned {len(result)} events")
 
     await _run()
 
 
-async def cmd_search(args):
+async def cmd_search(args, interactive=True):
     async def _run():
         if not args:
             logger.warning("Please enter search argument")
             return
 
         query = parse_query(args)
-
-        logger.info(f"query: {query}")
-
+        logger.debug(f"query: {query}")
+        
+        logger.info(f"Searching in events (stored)...")
         events = load_events()
 
         if not events:
-            logger.warning("No events saved")
+            logger.warning("No events saved, run 'refresh' first")
             return
 
         result = query_events(
@@ -209,34 +223,36 @@ async def cmd_search(args):
             text=query["text"],
             fields=query["fields"],
             filters=query["filters"],
-            group_by=None,
+            group_by=None, # not used by this command
             limit=query["limit"]
         )
 
         for event in result[::-1]:
-            logger.info(f"SEAR (score={event['score']}): {event['id']} - {event['name']} - {event['summary']}")
+            log_buffer.write(f"SEAR: {event['id']} - {event['name']} - {event['summary']}")
 
         logger.info(f"Returned {len(result)} events")
 
     await _run()
 
 
-async def cmd_rank(args):
+async def cmd_rank(args, interactive=True):
     async def _run():
         if not args:
             logger.warning("Please provide ranking arguments")
             return
 
         query = parse_query(args)
+        logger.debug(f"query: {query}")
 
         if not query.get("group"):
             logger.warning("rank requires --group")
             return
-
+        
+        logger.info(f"Ranking events (stored)...")
         events = load_events()
 
         if not events:
-            logger.warning("No events saved")
+            logger.warning("No events saved, run 'refresh' first")
             return
 
         result = query_events(
@@ -249,25 +265,125 @@ async def cmd_rank(args):
             limit=query["limit"]
         )
 
-        if not result:
+        if not result: 
             logger.info("No ranking results")
             return
 
         for row in result[::-1]:
-            logger.info(f"{row['group']} (count={row['count']}, avg_score={row['avg_score']})")
+            log_buffer.write(f"RANK: {row['group']} (count={row['count']})")
 
         logger.info(f"Returned {len(result)} ranked groups")
 
     await _run()
 
-async def cmd_clear(args=None):
+
+async def cmd_clear(args=None, interactive=True):
     async def _run():
-        logger.info("Clearing screen...") # useless
+        logger.info("Clearing screen...") # still being written to file log
         log_buffer.clear()
 
     await _run()
 
-async def handle_command(text, app):
+
+async def cmd_poll(args, interactive=True):
+    """ 
+    command for automatic event fetching
+    the command will run 'refresh' in a loop until stopped
+    same command is used for both start and stop,
+    parse_interval function will look for substring in args
+    to decide if toggle is start or stop
+    """
+    
+    # ---- STATUS ----
+    
+    if not args:
+        logger.info("Getting poll status...")
+        task = state.get("poll_task")
+        
+        if task and not task.done():
+            logger.info("Poll is ON, use 'poll stop' to stop")
+        
+        else:
+            logger.info("Poll is OFF, use 'poll start [INTERVAL]' to start")
+            logger.info("INTERVAL Duration formatted as <int>[s|m|h|d]")
+            
+        return
+    
+    # ---- PARSE ARGS ----
+    
+    # parse intervall (taken from config if not specified)
+    query = parse_interval(args)
+    
+    if not query:
+        return
+    
+    # ---- STOP ----
+    
+    if query.get("toggle", None) == "stop":
+        stop_event = state.get("poll_stop")
+        task = state.get("poll_task")
+        
+        if not task or task.done():
+            logger.warning("Poll is not running")
+            return
+        
+        logger.info("Stopping poll loop...")
+        stop_event.set()
+        await task
+        logger.info("Poll stopped")
+        return
+        
+    
+    # ---- START ----
+    
+    elif query.get("toggle", None) == "start":
+        if state.get("poll_task") and not state["poll_task"].done():
+            logger.warning("Poll already running")
+            return
+        
+        logger.info("Starting poll loop...")
+        
+        stop_event = asyncio.Event()
+        state["poll_stop"] = stop_event
+        
+        async def poll_loop():
+            logger.info(f"Poll started, interval={query['interval_s']}s {f"({query['interval_str']})" if not 's' in query['interval_str'] else ''}")
+            
+            try:
+                while True:
+                    await refresh_events() # can be replaced with refresh_events function for less output if prefered
+                    
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=query['interval_s'])
+                        
+                        # If we get here then stop_event was set so we break infinity loop
+                        break
+                        
+                    except asyncio.TimeoutError:
+                        # Timeout = run next cycle
+                        continue
+            
+            finally:
+                state["poll_task"] = None
+                state["poll_stop"] = None
+                logger.info("Poll loop exited")
+        
+        if interactive:
+            task = asyncio.create_task(poll_loop())
+            state["poll_task"] = task
+        
+        else:
+            await poll_loop()
+    
+    else:
+        logger.warning("Invalid/missing argument(s), expected either 'start [interval]' or 'stop' as command argument, type 'help' for more info")
+
+
+# --------------------
+# command handler
+# --------------------
+
+async def handle_command(text, app, interactive=True):
     parts = text.strip().lower().split(" ", 1)
 
     cmd = parts[0]
@@ -289,12 +405,14 @@ async def handle_command(text, app):
         "search": cmd_search,
         "rank": cmd_rank,
         "clear": cmd_clear,
+        "poll": cmd_poll
     }
 
     handler = command_map.get(cmd)
 
     if handler:
-        await handler(args)
+        logger.info(f"cmd='{cmd}', args='{' '.join(args)}'")
+        await handler(args=args, interactive=interactive)
         state["force_scroll"] = True
     else:
         logger.warning("Unknown command")
