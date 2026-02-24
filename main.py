@@ -2,7 +2,6 @@ import sys
 import argparse
 import asyncio
 
-
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gui", action="store_true")

@@ -3,6 +3,7 @@ from typing import Any
 import re
 
 from src.core.logger import get_logger
+from src.core.config import settings
 
 logger = get_logger(__name__)
 
@@ -10,6 +11,91 @@ logger = get_logger(__name__)
 # parse
 # ----------------------------
 
+# f.e used by poll cmd
+def parse_interval(args: list[str] | str) -> dict:
+    args = " ".join([arg for arg in args]) if isinstance(args, list) else args
+    args = args.lower().strip()
+    
+    multipliers = {
+        "s": 1,
+        "m": 60,
+        "h": 3600,
+        "d": 86400,
+    }
+    
+    # ---- dict to return ----
+    result = {
+        "toggle": None,
+        "interval_s": None,
+        "interval_str": None
+    }
+    
+    # ---- parse toggle ----
+    
+    if any(a in args for a in ("start", "on")) and not any(a in args for a in ("stop", "off")):
+        result['toggle'] = "start"
+    
+    elif any(a in args for a in ("stop", "off")) and not any(a in args for a in ("start", "on")):
+        result["toggle"] = "stop"
+        return result
+    
+    else:
+        return result
+    
+    # ---- parse interval ----
+    
+    try:
+        match_arg = re.search(r"(\d+)([smhd])", args)
+        if match_arg:
+            number = int(match_arg.group(1))
+            unit = match_arg.group(2)
+            logger.debug(f"Poll interval set from cmd argument (cmd arg overrides config settings)")
+        
+        else:
+            interval_str = settings.poll_interval if settings.poll_interval else "5m" # extra fallback
+            match_conf = re.search(r"(\d+)([smhd])", interval_str)
+            if match_conf:
+                number = int(match_conf.group(1))
+                unit = match_conf.group(2)
+                logger.debug(f"Poll interval set from config settings (can be overridden with cmd argument)")
+    
+    except ValueError:
+        logger.error("Error while parsing interval value, probably caused by invalid value either from cmd arg or config")
+        raise
+
+    if unit not in multipliers:
+        raise ValueError("Invalid interval format. Use s, m, h, or d.")
+    
+    seconds = number * multipliers[unit]
+    result["interval_str"] = f"{number}{unit}" if number and unit else None
+    result["interval_s"] = seconds
+    
+    logger.debug(f"Poll interval set to '{result['interval_str']}'")
+
+    # ---- verify interval value ----
+
+    if seconds <= 10:
+        match = re.search(r"--force\s+(.*?)(?=\s+--\w+|$)", args)
+        force = match.group(1).lower().strip() if match else None
+        force = isinstance(force, str) and force.lower() == "true"
+        
+        if not force:
+            raise ValueError("Polling interval too small, minimum is '10s' but recommended minimum is '60s' \n(however you can bypass minimum limit by adding '--force True' as argument altough it is not recommended)")
+        
+        else:
+            logger.info(
+                "Setting polling interval below the recommended minimum using --force. "
+                "Use at your own risk; this may lead to rate limiting or blocking."
+            )
+
+    elif seconds < 60:
+        logger.warning("Polling interval under 60 seconds works but is not recommended")
+        
+        
+    return result
+
+
+# f.e used by find, search and rank cmds
 def parse_query(args: list[str] | str) -> dict:
     args = " ".join([arg for arg in args]) if isinstance(args, list) else args
     if not args:
@@ -223,10 +309,10 @@ def query_events(
         # Sorting (rank mode)
         # ----------------------------
 
-        if sort == "-count" or not sort:
+        if sort == "count" or not sort:
             result.sort(key=lambda x: x["count"], reverse=True)
 
-        elif sort == "-score":
+        elif sort == "score":
             result.sort(key=lambda x: x["avg_score"], reverse=True)
 
         elif sort == "group":
@@ -266,7 +352,7 @@ def query_events(
     # Sorting stage (non-group)
     # ----------------------------
 
-    if sort == "-datetime":
+    if sort == "datetime":
         events.sort(
             key=lambda e: normalize_text(get_field(e, "datetime")),
             reverse=True

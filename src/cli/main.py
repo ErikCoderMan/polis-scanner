@@ -11,7 +11,7 @@ logger = get_logger(__name__)
 async def run_cli():
     logger.info("Starting CLI")
     logger.info(f"Data dir: {settings.data_dir}")
-    logger.info("Type 'help'")
+    logger.info("Type 'help' to show help text")
 
     app = Application(
         layout=layout,
