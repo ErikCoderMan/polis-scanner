@@ -19,7 +19,7 @@ state = {
 # Command implementations
 # -------------------------
 
-async def cmd_help(args=None):
+async def cmd_help(args=None, interactive=True):
     logger.info("""Showing help...
 Commands:
     refresh
