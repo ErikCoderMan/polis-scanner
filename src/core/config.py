@@ -31,7 +31,13 @@ class Settings:
     cache_dir: Path
     polis_event_url: str
     poll_interval: str # f.e: "100s", "45m", "1h", "3d" 
+    poll_interval_lowest_allowed_s: int
+    poll_interval_lowest_recomended_s: int
     http_timeout_s: int
+    http_backoff_s: int
+    http_backoff_max_s: int
+    http_backoff_modifier: float
+    http_max_retries: int
 
     def __post_init__(self):
         # Ensure directories exist
@@ -62,9 +68,15 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         logs_dir=logs_dir,
         cache_dir=cache_dir,
-        polis_event_url=os.environ.get("POLIS_SCANNER_POLIS_EVENT_URL", "https://polisen.se/api/events"),
+        polis_event_url = os.environ.get("POLIS_SCANNER_POLIS_EVENT_URL", "https://polisen.se/api/events"),
         poll_interval = os.environ.get("POLIS_SCANNER_POLL_INTERVAL", "5m"),
-        http_timeout_s = os.environ.get("POLIS_SCANNER_HTTP_TIMEOUT_S", 10)
+        poll_interval_lowest_allowed_s = os.environ.get("POLIS_SCANNER_POLL_INTERVALL_LOWEST_ALLOWED_S", 10),
+        poll_interval_lowest_recomended_s = os.environ.get("POLIS_SCANNER_POLL_INTERVAL_LOWEST_RECOMENDED_S", 60),
+        http_timeout_s = os.environ.get("POLIS_SCANNER_HTTP_TIMEOUT_S", 10),
+        http_backoff_s = os.environ.get("POLIS_SCANNER_HTTP_BACKOFF_S", 4),
+        http_backoff_max_s = os.environ.get("POLIS_SCANNER_HTTP_BACKOFF_MAX_S", 12),
+        http_backoff_modifier = os.environ.get("POLIS_SCANNER_HTTP_BACKOFF_MODIFIER", 1.5),
+        http_max_retries = os.environ.get("POLIS_SCANNER_HTTP_RETRIES", 3)
     )
     return settings
 

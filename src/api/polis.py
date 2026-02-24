@@ -8,7 +8,10 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 EVENT_URL = settings.polis_event_url
-
+BACKOFF_S = settings.http_backoff_s
+BACKOFF_MAX_S = settings.http_backoff_max_s
+BACKOFF_MODIFIER = settings.http_backoff_modifier
+RETRIES = settings.http_max_retries
 
 # -----------------------------
 # Exceptions (domain errors)
@@ -90,7 +93,10 @@ async def fetch_events(
     location: Optional[str] = None,
     event_type: Optional[str] = None,
     limit: Optional[int] = None,
-    retries: int = 3,
+    backoff_s: int = BACKOFF_S,
+    backoff_max_s: int = BACKOFF_MAX_S,
+    backoff_modifier: float = BACKOFF_MODIFIER,
+    retries: int = RETRIES,
 ) -> List[Dict]:
 
     params = {}
@@ -103,7 +109,7 @@ async def fetch_events(
         params["limit"] = limit
 
     attempt = 0
-    backoff = 2
+    backoff_val = backoff_s
 
     timeout = httpx.Timeout(settings.http_timeout_s)
 
@@ -117,12 +123,12 @@ async def fetch_events(
             except (PolisAPITimeout, PolisAPIUnavailable) as e:
                 attempt += 1
 
-                if attempt >= retries:
+                if attempt > retries:
                     raise PolisAPIUnavailable("Failed after multiple retries") from e
 
                 logger.warning(
-                    f"API retry {attempt}/{retries}: {e} — sleeping {backoff}s"
+                    f"API retry {attempt}/{retries}: {e} — sleeping {backoff_val}s"
                 )
 
-                await asyncio.sleep(backoff)
-                backoff *= 2
+                await asyncio.sleep(backoff_val)
+                backoff_val *= min(int(round(backoff_modifier)), backoff_max_s)

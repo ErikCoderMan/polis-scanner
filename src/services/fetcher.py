@@ -39,7 +39,7 @@ def save_events(old_events: List[Dict], new_events: List[Dict], data_file: Path 
     unique_new = [e for e in new_events if e.get("id") not in seen_ids]
 
     merged_events = old_events + unique_new
-    merged_events = sorted(merged_events, key=lambda e: e["id"])
+    merged_events = sorted(merged_events, key=lambda e: e["id"], reverse=True)
 
     data_file.parent.mkdir(parents=True, exist_ok=True)
     with data_file.open("w", encoding="utf-8") as f:
@@ -90,8 +90,8 @@ async def refresh_events(
     if not events:
         return []
 
-    events = sorted(events, key=lambda e: e["id"])
-    newest_event = events[-1]
+    events = sorted(events, key=lambda e: e["id"], reverse=True)
+    newest_event = events[0]
 
     if not update_last_event(newest_event, state_file):
         return []
@@ -99,6 +99,7 @@ async def refresh_events(
     old_events = load_events(data_file)
     seen_ids = {e.get("id") for e in old_events if "id" in e}
     new_events = [e for e in events if e.get("id") not in seen_ids]
+    new_events = sorted(new_events, key=lambda e: e['id'], reverse=True)
 
     for e in new_events:
         logger.debug(

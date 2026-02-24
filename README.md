@@ -73,18 +73,16 @@ Commands:
     refresh
         Fetch the latest events from the API.
 
-    poll [interval]
-        Starts repeated execution of the refresh command to fetch new events
-        automatically while pausing between requests.
+    poll [start <interval> | stop]
+        Repeatedly runs the refresh command at a fixed interval.
 
-        interval is formatted as <int>[s|m|h|d]
+        Interval format: <int>[s|m|h|d]
         (seconds, minutes, hours, days).
-        Example values: 30s, 5m, 1h, 2d.
-        
-        Recomended minimum interval value: 60s.
-        Minimum allowed interval: 10s (however this can be bypassed by adding 
-        '--force True' to arguments even though it is not recommended
-        to fetch so often and you can expect to get blocked fast).
+        Examples: 30s, 5m, 1h, 2d.
+
+        Recommended minimum interval: 60s.
+        Minimum allowed interval: 10s.
+        Use with care to avoid rate limiting.
 
     load
         Display events stored in local storage.
@@ -93,68 +91,93 @@ Commands:
         Show full details for a specific event by its ID.
 
     find <text>
-        Quick search for events containing the given text.
-        Results are ranked by relevance; best matches are shown last.
+        Quick search using strict filtering (default behavior).
+        Only events matching all words are returned.
 
     search [options]
-        Advanced search supporting filters, sorting, and result limits.
+        Advanced search with filtering, sorting, ranking and limits.
 
-        Results are ranked by relevance score by default.
+        Default mode: strict filtering (no relevance scoring).
+        Only exact matches are returned unless --strict false is used.
+
+        To enable relevance ranking:
+            --strict false
 
     rank --group <field> [options]
-        Show grouped statistics (counts) for a specified field.
+        Group events by a field and display statistics.
 
         Filters (--text, --fields, --filters) are applied before grouping.
 
-        Groups are sorted in reverse order by default, with the
-        highest-count group appearing last.
+        Default sorting:
+            If --text is used → avg_score, count, group
+            Otherwise        → count, group
 
 Search options:
     --text <text>
-        Search for specific words in event fields (default behavior).
+        Match all words in the specified fields.
 
     --fields <field1 field2 ...>
-        Specify event fields to search in.
+        Fields used for text matching.
         Default: name, summary, type, location.name.
 
     --filters <field1 value1 field2 value2 ...>
-        Filter events by exact field-value matches.
+        Exact field-value filtering.
 
-    --sort <value>
-        score      - sort by relevance score (default)
-        datetime   - sort by datetime, newest events first
+    --sort <field1 field2 ...>
+        Sort events by specified event fields.
+        Examples:
+            score
+            datetime
+            name
+            type
+            location.name
+
+        Multiple fields can be provided in priority order.
 
     --limit <n>
         Limit the number of returned results.
 
+    --strict <true|false>
+        true  (default)  → hard filtering only
+        false            → enable relevance scoring and ranking
+
 Rank options:
     --group <field>
-        Field used for grouping statistics.
-
-    --sort <value>
-        count     - sort groups by count (default)
-        <field>    - sort groups alphabetically by field value
+        Field used for grouping.
 
     --text <text>
-        Filter events by text before grouping.
+        Apply text filtering before grouping.
 
     --fields <field1 field2 ...>
-        Fields used when filtering by text.
+        Fields used for text filtering.
 
     --filters <field1 value1 ...>
-        Exact field-value filters applied before grouping.
+        Exact field-value filters before grouping.
+
+    --sort <field1 field2 ...>
+        Sort grouped results.
+        Available fields:
+            count
+            avg_score
+            group
+
+        Multiple fields can be provided in priority order.
 
     --limit <n>
-        Limit the number of ranked groups returned.
-
+        Limit number of groups returned.
+    
+    --strict <true|false>
+        true  (default)  → hard filtering only
+        false            → enable relevance scoring and ranking
+        
 Other:
     help
         Display this help message.
 
     clear
-        Clears the output screen.
+        Clear the output screen.
 
-    exit
+    exit / quit
         Quit the program.
 ```
 #### Examples

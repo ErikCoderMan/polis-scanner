@@ -1,6 +1,6 @@
 from prompt_toolkit.key_binding import KeyBindings
 from .ui import output_field, input_field
-from .commands import handle_command
+from src.commands.commands import handle_command
 
 
 kb = KeyBindings()
