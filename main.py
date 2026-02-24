@@ -17,14 +17,16 @@ async def main():
     if args.command:
         from src.cli.commands import handle_command
         from src.ui.log_buffer import log_buffer
-
+        
+        log_buffer.interactive_mode = False
+        
         class SimpleApp:
             def exit(self, result=0):
                 pass
 
         app = SimpleApp()
 
-        await handle_command(" ".join(args.command), app)
+        await handle_command(" ".join(args.command), app, interactive=False)
         if log_buffer is not None and len(log_buffer) > 0:
             print("\n".join(str(x) for x in log_buffer))
             
