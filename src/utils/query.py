@@ -281,9 +281,13 @@ def query_events(
         scored = []
         for e in events:
             score = score_query_event(e, text, filters, fields)
+            if not score:
+                continue # ignore events without any match score
+                
             event_copy = dict(e)
             event_copy["score"] = score
             scored.append(event_copy)
+            
         events = scored
         
     else:
@@ -292,6 +296,7 @@ def query_events(
             event_copy = dict(e)
             event_copy["score"] = 0
             non_scored.append(event_copy)
+            
         events = non_scored
 
     if sort:

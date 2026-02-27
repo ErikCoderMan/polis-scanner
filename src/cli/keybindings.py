@@ -1,37 +1,40 @@
+import asyncio
 from prompt_toolkit.key_binding import KeyBindings
 from .ui import output_field, input_field
 from src.commands.commands import handle_command
 
+def build_keybindings(loop, root=None):
+    kb = KeyBindings()
+    
+    @kb.add("enter")
+    def _(event):
+        
+        buffer = event.app.current_buffer
 
-kb = KeyBindings()
+        text = buffer.text.strip()
+        if not text:
+            buffer.reset()
+            return
 
-@kb.add("enter")
-def _(event):
-    buffer = event.app.current_buffer
+        buffer.validate_and_handle()
 
-    text = buffer.text.strip()
-    if not text:
-        buffer.reset()
-        return
+        asyncio.create_task(handle_command(text=text, loop=loop, root=root))
 
-    buffer.validate_and_handle()
-
-    import asyncio
-    asyncio.create_task(handle_command(text, event.app))
-
-@kb.add("pageup")
-def _(event):
-    event.app.layout.focus(output_field)
-    event.app.current_buffer.cursor_up(count=20)
-    event.app.layout.focus(input_field)
+    @kb.add("pageup")
+    def _(event):
+        event.app.layout.focus(output_field)
+        event.app.current_buffer.cursor_up(count=20)
+        event.app.layout.focus(input_field)
 
 
-@kb.add("pagedown")
-def _(event):
-    event.app.layout.focus(output_field)
-    event.app.current_buffer.cursor_down(count=20)
-    event.app.layout.focus(input_field)
+    @kb.add("pagedown")
+    def _(event):
+        event.app.layout.focus(output_field)
+        event.app.current_buffer.cursor_down(count=20)
+        event.app.layout.focus(input_field)
 
-@kb.add("c-c")
-def _(event):
-    event.app.exit(result=130)
+    @kb.add("c-c")
+    def _(event):
+        event.app.exit(result=130)
+    
+    return kb
