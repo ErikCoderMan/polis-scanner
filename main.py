@@ -5,47 +5,61 @@ import asyncio
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gui", action="store_true")
+    parser.add_argument("--cli", action="store_true")
     parser.add_argument("command", nargs="*")
-    return parser.parse_args()
+    
+    args, unknown = parser.parse_known_args()
+    args.command.extend(unknown)
+    
+    return args
 
 
 async def main_async(args):
-    # ---- Direct command mode ----
+    """
+    If any arguments have been provided
+    then run direct mode (one time command execution), then exit.
+    Otherwise if no arguments have been provided,
+    then start interactive mode that runs until user enters 'exit/quit'
+    """
+    
+    # -----------------------------
+    # Direct command mode
+    # -----------------------------
     if args.command:
         from src.commands.commands import handle_command
         from src.ui.log_buffer import log_buffer
 
         log_buffer.interactive_mode = False
-
-        class SimpleApp:
-            def exit(self, result=0):
-                pass
-
-        app = SimpleApp()
-
-        await handle_command(" ".join(args.command), app, interactive=False)
+        
+        await handle_command(" ".join(args.command), interactive=False)
 
         if log_buffer and len(log_buffer) > 0:
             print("\n".join(str(x) for x in log_buffer))
 
         return 0
-
-    # ---- Interactive CLI mode ----
+    
+    # -----------------------------
+    # Interactive CLI mode
+    # -----------------------------
     from src.cli.main import run_cli
     return await run_cli()
 
 
 def main():
+    """
+    (GUI) version (default) is using tkinter.
+    (CLI) version (--cli) is using prompt_toolkit.
+    """
+    
     args = parse_args()
-
-    # ---- GUI mode (sync, owns main thread) ----
-    if args.gui:
-        from src.gui.main import run_gui
-        return run_gui()
-
-    # ---- CLI mode (asyncio owns main thread) ----
-    return asyncio.run(main_async(args))
+    
+    # ---- CLI mode ----
+    if args.cli or args.command:
+        return asyncio.run(main_async(args))
+    
+    # ---- GUI mode (default) ----
+    from src.gui.main import run_gui
+    return run_gui()
 
 
 if __name__ == "__main__":

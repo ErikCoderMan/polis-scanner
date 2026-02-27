@@ -74,15 +74,13 @@ Commands:
         Fetch the latest events from the API.
 
     poll [start <interval> | stop]
-        Repeatedly runs the refresh command at a fixed interval.
+        Repeatedly refresh events (fetch) at a fixed interval.
 
         Interval format: <int>[s|m|h|d]
         (seconds, minutes, hours, days).
         Examples: 30s, 5m, 1h, 2d.
 
-        Recommended minimum interval: 60s.
-        Minimum allowed interval: 10s.
-        Use with care to avoid rate limiting.
+        Use low values with care to avoid rate limiting.
 
     load
         Display events stored in local storage.
@@ -95,7 +93,7 @@ Commands:
         Only events matching all words are returned.
 
     search [options]
-        Advanced search with filtering, sorting, ranking and limits.
+        Advanced search with filtering, sorting and limit.
 
         Default mode: strict filtering (no relevance scoring).
         Only exact matches are returned unless --strict false is used.
@@ -177,8 +175,13 @@ Other:
     clear
         Clear the output screen.
 
-    exit / quit
+    exit / quit [now]
         Quit the program.
+        
+        Options:
+            now            → Do not wait for background tasks, quit imediately
+            (no arguments) → Program will make a clean exit, properly wait and close tasks
+            
 ```
 #### Examples
 

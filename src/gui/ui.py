@@ -3,8 +3,9 @@ import asyncio
 from datetime import datetime
 from src.ui.log_buffer import log_buffer
 from src.core.config import settings
+from src.core.logger import get_logger
 from src.commands.commands import handle_command
-
+logger = get_logger(__name__)
 
 class GUIApp:
     def __init__(self, root: tk.Tk, loop: asyncio.AbstractEventLoop):
@@ -22,9 +23,12 @@ class GUIApp:
         # used to autoscroll to bottom on command execution
         self.force_scroll = False
         
-        # ---- siren title ----
+        # ---- UI buffer ----
         
         self.last_snapshot = ""
+        
+        # ---- siren title ----
+        
         self.title_patterns = ["*-*-*-", "-*-*-*"]
         self.title_index = 0
         
@@ -55,9 +59,17 @@ class GUIApp:
         # Separator
         tk.Frame(self.root, height=2, bd=1, relief="sunken").pack(fill="x")
 
-        # Input
-        self.input = tk.Entry(self.root)
-        self.input.pack(fill="x")
+        # Input container
+        input_frame = tk.Frame(self.root)
+        input_frame.pack(fill="x")
+
+        # Prompt label
+        tk.Label(input_frame, text="> ").pack(side="left")
+
+        # Input field
+        self.input = tk.Entry(input_frame)
+        self.input.pack(side="left", fill="x", expand=True)
+
         self.input.bind("<Return>", self.on_enter)
 
     # ----------------------------
@@ -71,13 +83,13 @@ class GUIApp:
 
         self.input.delete(0, tk.END)
 
-        # handle command with asyncio
-        # we are using the asyncio loop on background thread
+        # Dispatch async command to background loop
         asyncio.run_coroutine_threadsafe(
-            handle_command(text),
+            handle_command(text=text, loop=self.loop, root=self.root),
             self.loop
         )
-        
+
+        # Request autoscroll after command output
         self.force_scroll = True
 
     # ----------------------------
@@ -118,3 +130,4 @@ class GUIApp:
 
             self.output.config(state="disabled")
             self.last_snapshot = snapshot
+

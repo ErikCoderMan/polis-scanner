@@ -11,6 +11,7 @@ logger = get_logger(__name__)
 def run_gui() -> int:
     logger.info("Starting GUI")
     logger.info(f"Data dir: {settings.data_dir}")
+    logger.info("Type 'help' to show full help text.")
     
     # ---- asyncio, background thread ----
     loop = asyncio.new_event_loop()
@@ -35,3 +36,4 @@ def run_gui() -> int:
         logger.info("GUI closed")
 
     return 0
+
