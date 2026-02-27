@@ -1,0 +1,120 @@
+import tkinter as tk
+import asyncio
+from datetime import datetime
+from src.ui.log_buffer import log_buffer
+from src.core.config import settings
+from src.commands.commands import handle_command
+
+
+class GUIApp:
+    def __init__(self, root: tk.Tk, loop: asyncio.AbstractEventLoop):
+        
+        # ---- loops ----
+        
+        # tkinter loop (main thread)
+        self.root = root
+        
+        # asyncio background loop (sepparate thread)
+        self.loop = loop
+        
+        # ---- scrolling ----
+        
+        # used to autoscroll to bottom on command execution
+        self.force_scroll = False
+        
+        # ---- siren title ----
+        
+        self.last_snapshot = ""
+        self.title_patterns = ["*-*-*-", "-*-*-*"]
+        self.title_index = 0
+        
+        # ---- build layout ----
+        
+        self.build_layout()
+        self.schedule_update()
+
+    # ----------------------------
+    # Layout
+    # ----------------------------
+
+    def build_layout(self):
+        self.root.geometry("900x600")
+
+        # Title
+        self.title_label = tk.Label(self.root, anchor="center")
+        self.title_label.pack(fill="x")
+
+        # Separator
+        tk.Frame(self.root, height=2, bd=1, relief="sunken").pack(fill="x")
+
+        # Output
+        self.output = tk.Text(self.root, wrap="word")
+        self.output.pack(fill="both", expand=True)
+        self.output.config(state="disabled")
+
+        # Separator
+        tk.Frame(self.root, height=2, bd=1, relief="sunken").pack(fill="x")
+
+        # Input
+        self.input = tk.Entry(self.root)
+        self.input.pack(fill="x")
+        self.input.bind("<Return>", self.on_enter)
+
+    # ----------------------------
+    # Input handler
+    # ----------------------------
+
+    def on_enter(self, event):
+        text = self.input.get().strip()
+        if not text:
+            return
+
+        self.input.delete(0, tk.END)
+
+        # handle command with asyncio
+        # we are using the asyncio loop on background thread
+        asyncio.run_coroutine_threadsafe(
+            handle_command(text),
+            self.loop
+        )
+        
+        self.force_scroll = True
+
+    # ----------------------------
+    # Updater
+    # ----------------------------
+
+    def schedule_update(self):
+        self.update_ui()
+        self.root.after(500, self.schedule_update)
+
+    def update_ui(self):
+        snapshot = log_buffer.get_text()
+
+        # ---- Title animation ----
+        self.title_index = (self.title_index + 1) % len(self.title_patterns)
+        siren = self.title_patterns[self.title_index]
+        clock = datetime.now().strftime("%H:%M:%S")
+
+        title_text = (
+            f"{siren} {clock} | "
+            f"{settings.app_name} v{settings.version} (GUI) | "
+            f"{len(snapshot.splitlines())} lines {siren}"
+        )
+        self.title_label.config(text=title_text)
+
+        # ---- Output update ----
+        if snapshot != self.last_snapshot:
+            self.output.config(state="normal")
+
+            # Check if user is near bottom
+            bottom_visible = self.output.yview()[1] > 0.95
+
+            self.output.delete("1.0", tk.END)
+            self.output.insert(tk.END, snapshot)
+
+            if bottom_visible or self.force_scroll:
+                self.output.see(tk.END)
+
+            self.output.config(state="disabled")
+            self.last_snapshot = snapshot

@@ -2,24 +2,22 @@ import sys
 import argparse
 import asyncio
 
-async def main():
+
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("command", nargs="*")
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # ---- GUI mode ----
-    if args.gui:
-        from src.gui.main import run_gui
-        return run_gui()
 
+async def main_async(args):
     # ---- Direct command mode ----
     if args.command:
-        from src.cli.commands import handle_command
+        from src.commands.commands import handle_command
         from src.ui.log_buffer import log_buffer
-        
+
         log_buffer.interactive_mode = False
-        
+
         class SimpleApp:
             def exit(self, result=0):
                 pass
@@ -27,9 +25,10 @@ async def main():
         app = SimpleApp()
 
         await handle_command(" ".join(args.command), app, interactive=False)
-        if log_buffer is not None and len(log_buffer) > 0:
+
+        if log_buffer and len(log_buffer) > 0:
             print("\n".join(str(x) for x in log_buffer))
-            
+
         return 0
 
     # ---- Interactive CLI mode ----
@@ -37,10 +36,21 @@ async def main():
     return await run_cli()
 
 
+def main():
+    args = parse_args()
+
+    # ---- GUI mode (sync, owns main thread) ----
+    if args.gui:
+        from src.gui.main import run_gui
+        return run_gui()
+
+    # ---- CLI mode (asyncio owns main thread) ----
+    return asyncio.run(main_async(args))
+
+
 if __name__ == "__main__":
     try:
-        exit_code = asyncio.run(main())
-        sys.exit(exit_code)
+        sys.exit(main())
 
     except KeyboardInterrupt:
         print("\nInterrupted")

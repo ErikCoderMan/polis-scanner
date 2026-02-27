@@ -143,7 +143,7 @@ async def cmd_refresh(args=None, interactive=True):
             logger.info("No new events")
             return
 
-        for event in events:
+        for event in events[::-1]:
             log_buffer.write(
                 f"REFRESH: {event['id']} - {event['name']} - {event['summary']}"
             )
@@ -162,7 +162,7 @@ async def cmd_load(args=None, interactive=True):
             logger.warning("No events saved, run 'refresh' instead")
             return
 
-        for event in events:
+        for event in events[::-1]:
             log_buffer.write(
                 f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
             )
@@ -414,7 +414,7 @@ async def cmd_poll(args, interactive=True):
 # command handler
 # --------------------
 
-async def handle_command(text, app, interactive=True):
+async def handle_command(text, app=None, interactive=True):
     parts = text.strip().lower().split(" ", 1)
 
     cmd = parts[0]
