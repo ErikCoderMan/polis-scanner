@@ -2,45 +2,69 @@ import sys
 import argparse
 import asyncio
 
-async def main():
+
+def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gui", action="store_true")
+    parser.add_argument("--cli", action="store_true")
     parser.add_argument("command", nargs="*")
-    args = parser.parse_args()
+    
+    args, unknown = parser.parse_known_args()
+    args.command.extend(unknown)
+    
+    return args
 
-    # ---- GUI mode ----
-    if args.gui:
-        from src.gui.main import run_gui
-        return run_gui()
 
-    # ---- Direct command mode ----
+async def main_async(args):
+    """
+    If any arguments have been provided
+    then run direct mode (one time command execution), then exit.
+    Otherwise if no arguments have been provided,
+    then start interactive mode that runs until user enters 'exit/quit'
+    """
+    
+    # -----------------------------
+    # Direct command mode
+    # -----------------------------
     if args.command:
-        from src.cli.commands import handle_command
+        from src.commands.commands import handle_command
         from src.ui.log_buffer import log_buffer
-        
+
         log_buffer.interactive_mode = False
         
-        class SimpleApp:
-            def exit(self, result=0):
-                pass
+        await handle_command(" ".join(args.command), interactive=False)
 
-        app = SimpleApp()
-
-        await handle_command(" ".join(args.command), app, interactive=False)
-        if log_buffer is not None and len(log_buffer) > 0:
+        if log_buffer and len(log_buffer) > 0:
             print("\n".join(str(x) for x in log_buffer))
-            
-        return 0
 
-    # ---- Interactive CLI mode ----
+        return 0
+    
+    # -----------------------------
+    # Interactive CLI mode
+    # -----------------------------
     from src.cli.main import run_cli
     return await run_cli()
 
 
+def main():
+    """
+    (GUI) version (default) is using tkinter.
+    (CLI) version (--cli) is using prompt_toolkit.
+    """
+    
+    args = parse_args()
+    
+    # ---- CLI mode ----
+    if args.cli or args.command:
+        return asyncio.run(main_async(args))
+    
+    # ---- GUI mode (default) ----
+    from src.gui.main import run_gui
+    return run_gui()
+
+
 if __name__ == "__main__":
     try:
-        exit_code = asyncio.run(main())
-        sys.exit(exit_code)
+        sys.exit(main())
 
     except KeyboardInterrupt:
         print("\nInterrupted")

@@ -1,17 +1,21 @@
 import asyncio
 import json
+from src.core.config import settings
 from src.services.fetcher import refresh_events, load_events
 from src.api.polis import PolisAPIError
 from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
 from src.utils.query import query_events, parse_query, parse_interval
+from src.core.lifecycle import graceful_shutdown
 
 logger = get_logger(__name__)
 
 state = {
     "poll_task": None,
     "poll_stop": None,
-    "force_scroll": False
+    "force_scroll": False,
+    "shutdown_in_progress": False,
+    "interactive_mode": True
 }
 
 
@@ -26,15 +30,13 @@ Commands:
         Fetch the latest events from the API.
 
     poll [start <interval> | stop]
-        Repeatedly runs the refresh command at a fixed interval.
+        Repeatedly refresh events (fetch) at a fixed interval.
 
         Interval format: <int>[s|m|h|d]
         (seconds, minutes, hours, days).
         Examples: 30s, 5m, 1h, 2d.
 
-        Recommended minimum interval: 60s.
-        Minimum allowed interval: 10s.
-        Use with care to avoid rate limiting.
+        Use low values with care to avoid rate limiting.
 
     load
         Display events stored in local storage.
@@ -70,7 +72,7 @@ Search options:
 
     --fields <field1 field2 ...>
         Fields used for text matching.
-        Default: name, summary, type, location.name.
+        (Default all): name, summary, type, location.name.
 
     --filters <field1 value1 field2 value2 ...>
         Exact field-value filtering.
@@ -129,8 +131,18 @@ Other:
     clear
         Clear the output screen.
 
-    exit / quit
+    exit / quit [now]
         Quit the program.
+        
+        Options:
+            now            → Do not wait for background tasks, quit imediately
+            (no arguments) → Program will make a clean exit, properly wait and close tasks
+
+Examples:
+    search --text polis --filters type brand location.name stockholm --limit 3
+    find brand stockholm
+    rank --group location.name --filters type brand
+            
     """)
 
 
@@ -143,7 +155,7 @@ async def cmd_refresh(args=None, interactive=True):
             logger.info("No new events")
             return
 
-        for event in events:
+        for event in events[::-1]:
             log_buffer.write(
                 f"REFRESH: {event['id']} - {event['name']} - {event['summary']}"
             )
@@ -162,7 +174,7 @@ async def cmd_load(args=None, interactive=True):
             logger.warning("No events saved, run 'refresh' instead")
             return
 
-        for event in events:
+        for event in events[::-1]:
             log_buffer.write(
                 f"LOAD: {event['id']} - {event['name']} - {event['summary']}"
             )
@@ -354,8 +366,13 @@ async def cmd_poll(args, interactive=True):
             return
         
         logger.info("Stopping poll loop...")
-        stop_event.set()
-        await task
+        
+        if stop_event:
+            stop_event.set()
+
+        if task:
+            await asyncio.wait_for(task, timeout=settings.shutdown_grace_period)
+            
         logger.info("Poll stopped")
         return
         
@@ -393,7 +410,11 @@ async def cmd_poll(args, interactive=True):
                     except asyncio.TimeoutError:
                         # Timeout = run next cycle
                         continue
-            
+                
+            except asyncio.CancelledError:
+                logger.info("Poll task was cancelled")
+                raise
+                
             finally:
                 state["poll_task"] = None
                 state["poll_stop"] = None
@@ -414,7 +435,15 @@ async def cmd_poll(args, interactive=True):
 # command handler
 # --------------------
 
-async def handle_command(text, app, interactive=True):
+async def handle_command(text, 
+        app=None,
+        *,
+        state=state,
+        loop=None,
+        root=None,
+        interactive=True
+    ):
+    
     parts = text.strip().lower().split(" ", 1)
 
     cmd = parts[0]
@@ -424,7 +453,12 @@ async def handle_command(text, app, interactive=True):
         return
 
     if cmd in ("exit", "quit"):
-        app.exit()
+        if "now" in args:
+            await graceful_shutdown(state=state, loop=loop, root=root, force=True)
+        
+        else:
+            await graceful_shutdown(state=state, loop=loop, root=root, force=False)
+        
         return
 
     command_map = {
@@ -448,6 +482,5 @@ async def handle_command(text, app, interactive=True):
         
     else:
         logger.warning("Unknown command")
-        
         
         
