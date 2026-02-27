@@ -1,5 +1,6 @@
 import asyncio
 import json
+from src.core.config import settings
 from src.services.fetcher import refresh_events, load_events
 from src.api.polis import PolisAPIError
 from src.core.logger import get_logger
@@ -370,7 +371,7 @@ async def cmd_poll(args, interactive=True):
             stop_event.set()
 
         if task:
-            await asyncio.wait_for(task, timeout=grace_period)
+            await asyncio.wait_for(task, timeout=settings.shutdown_grace_period)
             
         logger.info("Poll stopped")
         return

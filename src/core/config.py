@@ -39,6 +39,7 @@ class Settings:
     http_backoff_modifier: float
     http_max_retries: int
     shutdown_grace_period: int
+    command_history_len: int
 
     def __post_init__(self):
         # Ensure directories exist
@@ -78,7 +79,8 @@ def load_settings() -> Settings:
         http_backoff_max_s = os.environ.get("POLIS_SCANNER_HTTP_BACKOFF_MAX_S", 12),
         http_backoff_modifier = os.environ.get("POLIS_SCANNER_HTTP_BACKOFF_MODIFIER", 1.5),
         http_max_retries = os.environ.get("POLIS_SCANNER_HTTP_RETRIES", 3),
-        shutdown_grace_period = os.environ.get("POLIS_SCANNER_SHUTDOWN_GRACE_PERIOD", 10)
+        shutdown_grace_period = os.environ.get("POLIS_SCANNER_SHUTDOWN_GRACE_PERIOD", 10),
+        command_history_len = os.environ.get("POLIS_SCANNER_COMMAND_HISTORY_LEN", 1000)
     )
     return settings
 

@@ -5,6 +5,7 @@ from src.ui.log_buffer import log_buffer
 from src.core.config import settings
 from src.core.logger import get_logger
 from src.commands.commands import handle_command
+from src.utils.history import CommandHistory
 logger = get_logger(__name__)
 
 class GUIApp:
@@ -23,9 +24,14 @@ class GUIApp:
         # used to autoscroll to bottom on command execution
         self.force_scroll = False
         
-        # ---- UI buffer ----
+        # ---- buffers ----
         
+        # output UI buffer
         self.last_snapshot = ""
+        
+        # command history
+        self.history = CommandHistory()
+        self.saved_text = ""
         
         # ---- siren title ----
         
@@ -71,15 +77,23 @@ class GUIApp:
         self.input.pack(side="left", fill="x", expand=True)
 
         self.input.bind("<Return>", self.on_enter)
+        self.input.bind("<Up>", self.history_up)
+        self.input.bind("<Down>", self.history_down)
 
     # ----------------------------
-    # Input handler
+    # Input handlers
     # ----------------------------
 
     def on_enter(self, event):
         text = self.input.get().strip()
         if not text:
             return
+        
+        # save command in history
+        self.history.append(text)
+        
+        # reset history index on (enter) press
+        self.history.reset_cursor()
 
         self.input.delete(0, tk.END)
 
@@ -91,6 +105,28 @@ class GUIApp:
 
         # Request autoscroll after command output
         self.force_scroll = True
+    
+    def history_up(self, event):
+        text = self.history.previous()
+        
+        if not text:
+            return
+            
+        self.input.delete(0, tk.END)
+        self.input.insert(0, text)
+        self.input.icursor(tk.END)
+
+    def history_down(self, event):
+        text = self.history.next()
+        
+        if not text:
+            text = ""
+            
+        self.input.delete(0, tk.END)
+        self.input.insert(0, text)
+        self.input.icursor(tk.END)
+    
+    
 
     # ----------------------------
     # Updater
@@ -105,13 +141,14 @@ class GUIApp:
 
         # ---- Title animation ----
         self.title_index = (self.title_index + 1) % len(self.title_patterns)
-        siren = self.title_patterns[self.title_index]
+        left_siren = self.title_patterns[self.title_index]
+        right_siren = self.title_patterns[1 if self.title_index==0 else 0]
         clock = datetime.now().strftime("%H:%M:%S")
 
         title_text = (
-            f"{siren} {clock} | "
+            f"{left_siren} {clock} | "
             f"{settings.app_name} v{settings.version} (GUI) | "
-            f"{len(snapshot.splitlines())} lines {siren}"
+            f"{len(snapshot.splitlines())} lines {right_siren}"
         )
         self.title_label.config(text=title_text)
 
