@@ -1,9 +1,9 @@
 import asyncio
 from prompt_toolkit.key_binding import KeyBindings
-from .ui import output_field, input_field
 from src.commands.commands import handle_command
+from .ui import output_field, input_field
 
-def build_keybindings(loop, root=None):
+def build_keybindings(ctx = None):
     kb = KeyBindings()
     
     @kb.add("enter")
@@ -18,7 +18,7 @@ def build_keybindings(loop, root=None):
 
         buffer.validate_and_handle()
 
-        asyncio.create_task(handle_command(text=text, loop=loop, root=root))
+        asyncio.create_task(handle_command(text=text, ctx=ctx))
 
     @kb.add("pageup")
     def _(event):

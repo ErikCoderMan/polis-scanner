@@ -23,7 +23,7 @@ state = {
 # Command implementations
 # -------------------------
 
-async def cmd_help(args=None, interactive=True):
+async def cmd_help(args=None, ctx=None):
     logger.info("""Showing help...
 Commands:
     refresh
@@ -146,7 +146,7 @@ Examples:
     """)
 
 
-async def cmd_refresh(args=None, interactive=True):
+async def cmd_refresh(args=None, ctx=None):
     async def _run():
         logger.info("Refreshing events (fetching)...")
         events = await refresh_events()
@@ -165,7 +165,7 @@ async def cmd_refresh(args=None, interactive=True):
     await _run()
 
 
-async def cmd_load(args=None, interactive=True):
+async def cmd_load(args=None, ctx=None):
     async def _run():
         logger.info("Loading events (stored)...")
         events = load_events()
@@ -184,7 +184,7 @@ async def cmd_load(args=None, interactive=True):
     await _run()
 
 
-async def cmd_more(args, interactive=True):
+async def cmd_more(args, ctx=None):
     async def _run():
         if not args:
             logger.warning("Please specify event id")
@@ -211,7 +211,7 @@ async def cmd_more(args, interactive=True):
     await _run()
 
 
-async def cmd_find(args, interactive=True):
+async def cmd_find(args, ctx=None):
     async def _run():
         if not args:
             logger.warning("Please enter text to find")
@@ -237,7 +237,7 @@ async def cmd_find(args, interactive=True):
     await _run()
 
 
-async def cmd_search(args, interactive=True):
+async def cmd_search(args, ctx=None):
     async def _run():
         if not args:
             logger.warning("Please enter search argument")
@@ -272,7 +272,7 @@ async def cmd_search(args, interactive=True):
     await _run()
 
 
-async def cmd_rank(args, interactive=True):
+async def cmd_rank(args, ctx=None):
     async def _run():
         if not args:
             logger.warning("Please provide ranking arguments")
@@ -315,7 +315,7 @@ async def cmd_rank(args, interactive=True):
     await _run()
 
 
-async def cmd_clear(args=None, interactive=True):
+async def cmd_clear(args=None, ctx=None):
     async def _run():
         logger.info("Clearing screen...") # still being written to file log
         log_buffer.clear()
@@ -323,7 +323,7 @@ async def cmd_clear(args=None, interactive=True):
     await _run()
 
 
-async def cmd_poll(args, interactive=True):
+async def cmd_poll(args, ctx=None):
     """ 
     command for automatic event fetching
     the command will run 'refresh' in a loop until stopped
@@ -420,7 +420,7 @@ async def cmd_poll(args, interactive=True):
                 state["poll_stop"] = None
                 logger.debug("Poll loop exited")
         
-        if interactive:
+        if ctx and ctx.interactive:
             task = asyncio.create_task(poll_loop())
             state["poll_task"] = task
         
@@ -435,15 +435,7 @@ async def cmd_poll(args, interactive=True):
 # command handler
 # --------------------
 
-async def handle_command(text, 
-        app=None,
-        *,
-        state=state,
-        loop=None,
-        root=None,
-        interactive=True
-    ):
-    
+async def handle_command(text, ctx=None):
     parts = text.strip().lower().split(" ", 1)
 
     cmd = parts[0]
@@ -454,10 +446,10 @@ async def handle_command(text,
 
     if cmd in ("exit", "quit"):
         if "now" in args:
-            await graceful_shutdown(state=state, loop=loop, root=root, force=True)
+            await graceful_shutdown(state=state, ctx=ctx, force=True)
         
         else:
-            await graceful_shutdown(state=state, loop=loop, root=root, force=False)
+            await graceful_shutdown(state=state, ctx=ctx, force=False)
         
         return
 
@@ -477,7 +469,7 @@ async def handle_command(text,
 
     if handler:
         logger.info(f"cmd='{cmd}', args='{' '.join(args)}'")
-        await handler(args=args, interactive=interactive)
+        await handler(args=args, ctx=ctx)
         state["force_scroll"] = True
         
     else:

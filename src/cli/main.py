@@ -10,14 +10,14 @@ from .keybindings import build_keybindings
 
 logger = get_logger(__name__)
 
-async def run_cli():
+async def run_cli(ctx):
     logger.info("Starting CLI")
     logger.info(f"Data dir: {settings.data_dir}")
     logger.info("For GUI interface, add argument '--gui' when running program.")
     logger.info("Type 'help' to show full help text.")
     
     loop = asyncio.get_running_loop()
-    kb = build_keybindings(loop, root=None)
+    kb = build_keybindings(ctx=ctx)
     
     app = Application(
         layout=layout,
@@ -25,6 +25,8 @@ async def run_cli():
         mouse_support=True,
         full_screen=True
     )
+    
+    ctx.app_cli = app
 
     asyncio.create_task(ui_updater(app, state))
     await app.run_async()

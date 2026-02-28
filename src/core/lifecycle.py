@@ -4,10 +4,12 @@ from src.core.config import settings
 
 logger = get_logger(__name__)
 
-async def graceful_shutdown(state, loop=None, root=None, force=False, grace_period=settings.shutdown_grace_period):
+async def graceful_shutdown(state, ctx, force=False, grace_period=settings.shutdown_grace_period):
     """
     Graceful lifecycle shutdown manager.
     """
+    
+    
     if state.get("shutdown_in_progress", None):
             logger.error(f"shutdown already in progress, returning")
             return
@@ -72,9 +74,9 @@ async def graceful_shutdown(state, loop=None, root=None, force=False, grace_peri
     # Stop event loop
     # --------------------------------------------------
     
-    if root:
+    if ctx.mode == "gui" and ctx.loop:
         try:
-            loop.call_soon_threadsafe(loop.stop)
+            ctx.loop.call_soon_threadsafe(ctx.loop.stop)
             
         except Exception:
             logger.exception("Failed stopping event loop")
@@ -83,16 +85,15 @@ async def graceful_shutdown(state, loop=None, root=None, force=False, grace_peri
     # GUI cleanup hook
     # --------------------------------------------------
 
-    if root:
+    if ctx.mode == "gui" and ctx.root:
         try:
-            root.after(0, root.quit)
+            ctx.root.after(0, ctx.root.quit)
         except Exception:
             logger.exception("GUI shutdown failed")
     
-    else:
+    if ctx.mode == "cli" and ctx.interactive and ctx.app_cli:
         try:
-            from prompt_toolkit.application.current import get_app
-            get_app().exit()
+            ctx.app_cli.exit()
         except Exception:
             logger.exception("CLI shutdown failed")
 

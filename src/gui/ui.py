@@ -6,18 +6,24 @@ from src.core.config import settings
 from src.core.logger import get_logger
 from src.commands.commands import handle_command
 from src.utils.history import CommandHistory
+
 logger = get_logger(__name__)
 
 class GUIApp:
-    def __init__(self, root: tk.Tk, loop: asyncio.AbstractEventLoop):
+    def __init__(self, ctx = None):
+        if not ctx:
+            logger.error(f"missing RuntimeContext")
+            
+        self.ctx = ctx
+        self.ctx.app_gui = self
         
         # ---- loops ----
         
         # tkinter loop (main thread)
-        self.root = root
+        self.root = ctx.root
         
         # asyncio background loop (sepparate thread)
-        self.loop = loop
+        self.loop = ctx.loop
         
         # ---- scrolling ----
         
@@ -99,7 +105,7 @@ class GUIApp:
 
         # Dispatch async command to background loop
         asyncio.run_coroutine_threadsafe(
-            handle_command(text=text, loop=self.loop, root=self.root),
+            handle_command(text=text, ctx=self.ctx),
             self.loop
         )
 
