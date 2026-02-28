@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import tkinter as tk
 import asyncio
 from datetime import datetime
@@ -10,7 +16,7 @@ from src.utils.history import CommandHistory
 logger = get_logger(__name__)
 
 class GUIApp:
-    def __init__(self, ctx = None):
+    def __init__(self, ctx: RuntimeContext = None):
         if not ctx:
             logger.error(f"missing RuntimeContext")
             

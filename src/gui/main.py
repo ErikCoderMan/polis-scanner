@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import tkinter as tk
 import asyncio
 import threading
@@ -8,7 +14,7 @@ from .ui import GUIApp
 logger = get_logger(__name__)
 
 
-def run_gui(ctx) -> int:
+def run_gui(ctx: RuntimeContext) -> int:
     logger.info("Starting GUI")
     logger.info(f"Data dir: {settings.data_dir}")
     logger.info("Type 'help' to show full help text.")

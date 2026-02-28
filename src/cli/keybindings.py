@@ -1,9 +1,15 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 from prompt_toolkit.key_binding import KeyBindings
 from src.commands.commands import handle_command
 from .ui import output_field, input_field
 
-def build_keybindings(ctx = None):
+def build_keybindings(ctx: RuntimeContext = None):
     kb = KeyBindings()
     
     @kb.add("enter")

@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 from prompt_toolkit.application import Application
 
@@ -10,7 +16,7 @@ from .keybindings import build_keybindings
 
 logger = get_logger(__name__)
 
-async def run_cli(ctx):
+async def run_cli(ctx: RuntimeContext):
     logger.info("Starting CLI")
     logger.info(f"Data dir: {settings.data_dir}")
     logger.info("For GUI interface, add argument '--gui' when running program.")

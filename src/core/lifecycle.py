@@ -1,10 +1,16 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 from src.core.logger import get_logger
 from src.core.config import settings
 
 logger = get_logger(__name__)
 
-async def graceful_shutdown(state, ctx, force=False, grace_period=settings.shutdown_grace_period):
+async def graceful_shutdown(state, ctx: RuntimeContext, force=False, grace_period=settings.shutdown_grace_period):
     """
     Graceful lifecycle shutdown manager.
     """

@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 import json
 from src.core.config import settings
@@ -23,7 +29,7 @@ state = {
 # Command implementations
 # -------------------------
 
-async def cmd_help(args=None, ctx=None):
+async def cmd_help(args=None, ctx: RuntimeContext=None):
     logger.info("""Showing help...
 Commands:
     refresh
@@ -146,7 +152,7 @@ Examples:
     """)
 
 
-async def cmd_refresh(args=None, ctx=None):
+async def cmd_refresh(args=None, ctx: RuntimeContext=None):
     async def _run():
         logger.info("Refreshing events (fetching)...")
         events = await refresh_events()
@@ -165,7 +171,7 @@ async def cmd_refresh(args=None, ctx=None):
     await _run()
 
 
-async def cmd_load(args=None, ctx=None):
+async def cmd_load(args=None, ctx: RuntimeContext=None):
     async def _run():
         logger.info("Loading events (stored)...")
         events = load_events()
@@ -184,7 +190,7 @@ async def cmd_load(args=None, ctx=None):
     await _run()
 
 
-async def cmd_more(args, ctx=None):
+async def cmd_more(args, ctx: RuntimeContext=None):
     async def _run():
         if not args:
             logger.warning("Please specify event id")
@@ -211,7 +217,7 @@ async def cmd_more(args, ctx=None):
     await _run()
 
 
-async def cmd_find(args, ctx=None):
+async def cmd_find(args, ctx: RuntimeContext=None):
     async def _run():
         if not args:
             logger.warning("Please enter text to find")
@@ -237,7 +243,7 @@ async def cmd_find(args, ctx=None):
     await _run()
 
 
-async def cmd_search(args, ctx=None):
+async def cmd_search(args, ctx: RuntimeContext=None):
     async def _run():
         if not args:
             logger.warning("Please enter search argument")
@@ -272,7 +278,7 @@ async def cmd_search(args, ctx=None):
     await _run()
 
 
-async def cmd_rank(args, ctx=None):
+async def cmd_rank(args, ctx: RuntimeContext=None):
     async def _run():
         if not args:
             logger.warning("Please provide ranking arguments")
@@ -315,7 +321,7 @@ async def cmd_rank(args, ctx=None):
     await _run()
 
 
-async def cmd_clear(args=None, ctx=None):
+async def cmd_clear(args=None, ctx: RuntimeContext=None):
     async def _run():
         logger.info("Clearing screen...") # still being written to file log
         log_buffer.clear()
@@ -323,7 +329,7 @@ async def cmd_clear(args=None, ctx=None):
     await _run()
 
 
-async def cmd_poll(args, ctx=None):
+async def cmd_poll(args, ctx: RuntimeContext=None):
     """ 
     command for automatic event fetching
     the command will run 'refresh' in a loop until stopped
@@ -435,7 +441,7 @@ async def cmd_poll(args, ctx=None):
 # command handler
 # --------------------
 
-async def handle_command(text, ctx=None):
+async def handle_command(text, ctx: RuntimeContext=None):
     parts = text.strip().lower().split(" ", 1)
 
     cmd = parts[0]
