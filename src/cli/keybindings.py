@@ -7,6 +7,7 @@ if TYPE_CHECKING:
 import asyncio
 from prompt_toolkit.key_binding import KeyBindings
 from src.commands.commands import handle_command
+from .ui import output_field, input_field
 
 
 def build_keybindings(app: CLIApp):
