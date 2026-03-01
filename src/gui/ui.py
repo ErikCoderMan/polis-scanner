@@ -31,11 +31,6 @@ class GUIApp:
         # asyncio background loop (sepparate thread)
         self.loop = ctx.loop
         
-        # ---- scrolling ----
-        
-        # used to autoscroll to bottom on command execution
-        self.force_scroll = False
-        
         # ---- buffers ----
         
         # output UI buffer
@@ -114,9 +109,6 @@ class GUIApp:
             handle_command(text=text, ctx=self.ctx),
             self.loop
         )
-
-        # Request autoscroll after command output
-        self.force_scroll = True
     
     def history_up(self, event):
         text = self.history.previous()
@@ -137,8 +129,6 @@ class GUIApp:
         self.input.delete(0, tk.END)
         self.input.insert(0, text)
         self.input.icursor(tk.END)
-    
-    
 
     # ----------------------------
     # Updater
@@ -146,6 +136,7 @@ class GUIApp:
 
     def schedule_update(self):
         self.update_ui()
+        self.ctx.state["force_scroll"] = False
         self.root.after(500, self.schedule_update)
 
     def update_ui(self):
@@ -174,7 +165,7 @@ class GUIApp:
             self.output.delete("1.0", tk.END)
             self.output.insert(tk.END, snapshot)
 
-            if bottom_visible or self.force_scroll:
+            if bottom_visible or self.ctx.state.get("force_scroll", None):
                 self.output.see(tk.END)
 
             self.output.config(state="disabled")

@@ -16,14 +16,6 @@ from src.core.lifecycle import graceful_shutdown
 
 logger = get_logger(__name__)
 
-state = {
-    "poll_task": None,
-    "poll_stop": None,
-    "force_scroll": False,
-    "shutdown_in_progress": False,
-    "interactive_mode": True
-}
-
 
 # -------------------------
 # Command implementations
@@ -329,112 +321,93 @@ async def cmd_clear(args=None, ctx: RuntimeContext=None):
     await _run()
 
 
-async def cmd_poll(args, ctx: RuntimeContext=None):
-    """ 
-    command for automatic event fetching
-    the command will run 'refresh' in a loop until stopped
-    same command is used for both start and stop,
-    parse_interval function will look for substring in args
-    to decide if toggle is start or stop
-    """
-    
-    # ---- STATUS ----
-    
-    if not args:
-        logger.info("Getting poll status...")
-        task = state.get("poll_task")
-        
-        if task and not task.done():
-            logger.info("Poll is ON, use 'poll stop' to stop")
-        
-        else:
-            logger.info("Poll is OFF, use 'poll start [INTERVAL]' to start")
-            logger.info("INTERVAL Duration formatted as <int>[s|m|h|d]")
-            
-        return
-    
-    # ---- PARSE ARGS ----
-    
-    # parse intervall (taken from config if not specified)
-    query = parse_interval(args)
-    
-    if not query:
-        return
-    
-    # ---- STOP ----
-    
-    if query.get("toggle", None) == "stop":
-        stop_event = state.get("poll_stop")
-        task = state.get("poll_task")
-        
-        if not task or task.done():
-            logger.warning("Poll is not running")
+async def cmd_poll(args, ctx: RuntimeContext = None):
+    async def _run():
+        if not ctx or not ctx.scheduler:
+            logger.error("Scheduler not available")
             return
-        
-        logger.info("Stopping poll loop...")
-        
-        if stop_event:
-            stop_event.set()
 
-        if task:
-            await asyncio.wait_for(task, timeout=settings.shutdown_grace_period)
-            
-        logger.info("Poll stopped")
-        return
-        
-    
-    # ---- START ----
-    
-    elif query.get("toggle", None) == "start":
-        if state.get("poll_task") and not state["poll_task"].done():
-            logger.warning("Poll already running")
+        scheduler = ctx.scheduler
+
+        # ---- STATUS ----
+
+        if not args:
+            if scheduler.has_worker("poll"):
+                logger.info("Poll is ON, use 'poll stop' to stop")
+            else:
+                logger.info("Poll is OFF, use 'poll start [INTERVAL]' to start")
             return
-        
-        logger.info("Starting poll loop...")
-        
-        stop_event = asyncio.Event()
-        state["poll_stop"] = stop_event
-        
-        async def poll_loop():
-            logger.info(f"Poll started, interval={query['interval_s']}s {f"({query['interval_str']})" if not 's' in query['interval_str'] else ''}")
-            
-            try:
-                while True:
-                    new_events = await refresh_events()
-                    if new_events:
-                        for event in new_events:
-                            log_buffer.write(
-                                f"POLL: {event['id']} - {event['name']} - {event['summary']}"
-                            )
-                    
-                    try:
-                        await asyncio.wait_for(stop_event.wait(), timeout=query['interval_s'])
-                        
-                        # If we get here then stop_event was set so we break infinity loop
-                        break
-                        
-                    except asyncio.TimeoutError:
-                        # Timeout = run next cycle
-                        continue
-                
-            except asyncio.CancelledError:
-                logger.info("Poll task was cancelled")
-                raise
-                
-            finally:
-                state["poll_task"] = None
-                state["poll_stop"] = None
-                logger.debug("Poll loop exited")
-        
-        if ctx and ctx.interactive:
-            task = asyncio.create_task(poll_loop())
-            state["poll_task"] = task
-        
-        else:
-            await poll_loop()
+
+        query = parse_interval(args)
+        if not query:
+            return
+
+        toggle = query.get("toggle")
+
+        # ---- STOP ----
+
+        if toggle == "stop":
+
+            if not scheduler.has_worker("poll"):
+                logger.warning("Poll is not running")
+                return
+
+            logger.info("Stopping poll loop...")
+            await scheduler.stop_and_wait(
+                "poll",
+                timeout=settings.shutdown_grace_period
+            )
+            logger.info("Poll stopped")
+            return
+
+        # ---- START ----
+
+        if toggle == "start":
+
+            if scheduler.has_worker("poll"):
+                logger.warning("Poll already running")
+                return
+
+            logger.info("Starting poll loop...")
+
+            async def poll_loop():
+                logger.info(
+                    f"Poll started, interval={query['interval_s']}s"
+                )
+
+                try:
+                    while True:
+                        new_events = await refresh_events()
+
+                        if new_events:
+                            for event in new_events:
+                                log_buffer.write(
+                                    f"POLL: {event['id']} - "
+                                    f"{event['name']} - "
+                                    f"{event['summary']}"
+                                )
+
+                        await asyncio.sleep(query["interval_s"])
+
+                except asyncio.CancelledError:
+                    logger.info("Poll task cancelled")
+                    raise
+
+                finally:
+                    logger.debug("Poll loop exited")
+
+            if ctx.interactive:
+                scheduler.spawn("poll", poll_loop())
+            else:
+                await poll_loop()
+
+            return
+
+        logger.warning(
+            "Expected 'start [interval]' or 'stop'"
+        )
     
-    else:
-        logger.warning("Invalid/missing argument(s), expected either 'start [interval]' or 'stop' as command argument, type 'help' for more info")
+    await _run()
 
 
 # --------------------
@@ -452,10 +425,10 @@ async def handle_command(text, ctx: RuntimeContext=None):
 
     if cmd in ("exit", "quit"):
         if "now" in args:
-            await graceful_shutdown(state=state, ctx=ctx, force=True)
+            await graceful_shutdown(ctx=ctx, force=True)
         
         else:
-            await graceful_shutdown(state=state, ctx=ctx, force=False)
+            await graceful_shutdown(ctx=ctx, force=False)
         
         return
 
@@ -475,10 +448,12 @@ async def handle_command(text, ctx: RuntimeContext=None):
 
     if handler:
         logger.info(f"cmd='{cmd}', args='{' '.join(args)}'")
+        
         await handler(args=args, ctx=ctx)
-        state["force_scroll"] = True
         
     else:
         logger.warning("Unknown command")
         
         
+    ctx.state["force_scroll"] = True
+

@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 import time
 from datetime import datetime
@@ -78,7 +84,7 @@ layout = Layout(root_container, focused_element=input_field)
 # Log updater + title animation
 # ----------------------------
 
-async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
+async def ui_updater(ctx: RuntimeContext, title_sleep=0.5, main_sleep=0.5):
     last_snapshot = ""
     title_timer = time.monotonic()
 
@@ -100,9 +106,9 @@ async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
             # Tail follow only if user is already near bottom
             at_bottom = doc.cursor_position >= max(len(doc.text) - 5, 0)
 
-            if state.get("force_scroll", False) or at_bottom:
+            if ctx.state.get("force_scroll", False) or at_bottom:
                 cursor = len(snapshot)
-                state["force_scroll"] = False
+                ctx.state["force_scroll"] = False
             else:
                 cursor = doc.cursor_position
 
@@ -116,6 +122,6 @@ async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
 
             last_snapshot = snapshot
             
-        app.invalidate()
-        await asyncio.sleep(0.5)
+        ctx.app_cli.invalidate()
+        await asyncio.sleep(main_sleep)
 

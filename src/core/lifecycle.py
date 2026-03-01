@@ -10,80 +10,68 @@ from src.core.config import settings
 
 logger = get_logger(__name__)
 
-async def graceful_shutdown(state, ctx: RuntimeContext, force=False, grace_period=settings.shutdown_grace_period):
+
+async def graceful_shutdown(
+    ctx: RuntimeContext,
+    force: bool = False,
+    grace_period: int = settings.shutdown_grace_period
+):
     """
     Graceful lifecycle shutdown manager.
     """
-    
-    
-    if state.get("shutdown_in_progress", None):
-            logger.error(f"shutdown already in progress, returning")
-            return
-    
-    state["shutdown_in_progress"] = True
+
+    if ctx.state.get("shutdown_in_progress"):
+        logger.error("Shutdown already in progress")
+        return
+
+    ctx.state["shutdown_in_progress"] = True
     logger.info("Shutdown initiated")
-    running_tasks = []
+
+    scheduler = ctx.scheduler
 
     # --------------------------------------------------
-    # Collect tasks + signal stop events
+    # Cancel workers first (deterministic shutdown signal)
     # --------------------------------------------------
 
-    for name, obj in state.items():
-        if not (name.endswith("_task") and obj):
-            continue
+    running_tasks = scheduler.running_tasks() if scheduler else []
 
-        if obj.done():
-            continue
+    if running_tasks:
+        logger.info(f"Cancelling {len(running_tasks)} workers")
 
-        running_tasks.append(obj)
-
-        stop_name = name.replace("_task", "_stop")
-        stop_event = state.get(stop_name)
-
-        if stop_event:
-            logger.info(f"Signalling stop event: {stop_name}")
-            stop_event.set()
-        else:
-            logger.warning(f"No stop event registered for {name}")
+        for task in running_tasks:
+            task.cancel()
 
     # --------------------------------------------------
-    # Graceful wait phase
+    # Grace period wait
     # --------------------------------------------------
 
     if running_tasks and not force:
         try:
-            logger.info(
-                f"Waiting {grace_period}s for tasks to exit gracefully..."
-            )
-
             await asyncio.wait_for(
-                asyncio.gather(*running_tasks),
+                asyncio.gather(
+                    *running_tasks,
+                    return_exceptions=True
+                ),
                 timeout=grace_period
             )
-
         except asyncio.TimeoutError:
             logger.warning("Graceful shutdown timeout reached")
 
-    # --------------------------------------------------
-    # Force cancel remaining tasks
-    # --------------------------------------------------
-    await asyncio.sleep(0.5)
-    running_tasks = [t for t in running_tasks if not t.done()]
-    for task in running_tasks:
-        if not task.done():
-            logger.warning(f"Force cancelling task {task}")
-            task.cancel()
-
-    await asyncio.gather(*running_tasks, return_exceptions=True)
+    else:
+        # Even if force=True, ensure tasks are drained
+        if running_tasks:
+            await asyncio.gather(
+                *running_tasks,
+                return_exceptions=True
+            )
 
     # --------------------------------------------------
-    # Stop event loop
+    # Stop event loop (GUI path)
     # --------------------------------------------------
-    
-    if ctx.mode == "gui" and ctx.loop:
+
+    if ctx.is_gui() and ctx.loop:
         try:
             ctx.loop.call_soon_threadsafe(ctx.loop.stop)
-            
         except Exception:
             logger.exception("Failed stopping event loop")
 
@@ -91,13 +79,17 @@ async def graceful_shutdown(state, ctx: RuntimeContext, force=False, grace_perio
     # GUI cleanup hook
     # --------------------------------------------------
 
-    if ctx.mode == "gui" and ctx.root:
+    if ctx.is_gui() and ctx.root:
         try:
             ctx.root.after(0, ctx.root.quit)
         except Exception:
             logger.exception("GUI shutdown failed")
-    
-    if ctx.mode == "cli" and ctx.interactive and ctx.app_cli:
+
+    # --------------------------------------------------
+    # CLI cleanup hook
+    # --------------------------------------------------
+
+    if ctx.is_cli() and ctx.interactive and ctx.app_cli:
         try:
             ctx.app_cli.exit()
         except Exception:

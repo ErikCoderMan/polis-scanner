@@ -5,8 +5,9 @@ if TYPE_CHECKING:
     import asyncio
     import tkinter as tk
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
+from src.core.scheduler import Scheduler
 
 @dataclass(slots=True)
 class RuntimeContext:
@@ -15,10 +16,12 @@ class RuntimeContext:
     loop: asyncio.AbstractEventLoop | None = None
     root: tk.Tk | None = None
     app_cli: object | None = None
-    app_gui: object | None = None 
+    app_gui: object | None = None
+    scheduler: Scheduler = Scheduler()
+    state: dict = field(default_factory=dict)
 
     def is_gui(self) -> bool:
-        return self.mode.lower() == "gui"
+        return (self.mode or "").lower() == "gui"
 
     def is_cli(self) -> bool:
-        return self.mode.lower() == "cli"
+        return (self.mode or "").lower() == "cli"

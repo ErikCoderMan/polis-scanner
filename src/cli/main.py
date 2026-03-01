@@ -9,7 +9,6 @@ from prompt_toolkit.application import Application
 
 from src.core.logger import get_logger
 from src.core.config import settings
-from src.commands.commands import state
 
 from .ui import layout, ui_updater
 from .keybindings import build_keybindings
@@ -34,7 +33,7 @@ async def run_cli(ctx: RuntimeContext):
     
     ctx.app_cli = app
 
-    asyncio.create_task(ui_updater(app, state))
+    asyncio.create_task(ui_updater(ctx))
     await app.run_async()
 
     return 0
