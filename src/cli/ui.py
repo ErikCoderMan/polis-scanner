@@ -1,46 +1,33 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 import time
 from datetime import datetime
+
 from prompt_toolkit.layout import Layout, WindowAlign
 from prompt_toolkit.layout.containers import HSplit, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.application.current import get_app
 from prompt_toolkit.document import Document
+from prompt_toolkit.application import Application
 
 from src.ui.log_buffer import log_buffer
 from src.core.config import settings
 
-# ----------------------------
-# UI widgets
-# ----------------------------
-output_field = TextArea(
-    text="",
-    scrollbar=True,
-    focusable=True,
-    wrap_lines=True,
-    read_only=True,
-    multiline=True
-)
+from .keybindings import build_keybindings
 
-history = InMemoryHistory()
-input_field = TextArea(
-    height=1,
-    prompt="> ",
-    multiline=False,
-    history=history
-)
-
-# ----------------------------
-# Self-contained dynamic title bar
-# ----------------------------
 class TitleBar:
     def __init__(self):
         self.siren_patterns = ["*-*-*-", "-*-*-*"]
         self.siren_index = 0
         self.text = "00:00:00 | app v0.0.0 (CLI) | 0 lines"
         self.control = FormattedTextControl(self.get_text, focusable=False)
+        
 
     def get_text(self):
         siren = self.siren_patterns[self.siren_index]
@@ -54,68 +41,107 @@ class TitleBar:
         self.siren_index = (self.siren_index + 1) % len(self.siren_patterns)
 
 
-# Instantiate the title bar and window
-title_bar = TitleBar()
-title_bar_widget = Window(height=1, content=title_bar.control, style="reverse", align=WindowAlign.CENTER)
+class CLIApp:
+    def __init__(self, ctx: RuntimeContext):
+        ctx.ui = self
+        self.ctx = ctx
 
-# Separator under title
-title_separator = Window(height=1, char="-", style="class:line")
+        # Widgets
+        self.output_field = TextArea(
+            text="",
+            scrollbar=True,
+            focusable=True,
+            wrap_lines=True,
+            read_only=True,
+            multiline=True
+        )
 
-# ----------------------------
-# Layout
-# ----------------------------
-root_container = HSplit([
-    title_bar_widget,  # dynamic title
-    title_separator,
-    output_field,      # scrollable output
-    Window(height=1, char="-"),  # line between output and input
-    input_field,       # input area
-])
+        self.history = InMemoryHistory()
 
-layout = Layout(root_container, focused_element=input_field)
+        self.input_field = TextArea(
+            height=1,
+            prompt="> ",
+            multiline=False,
+            history=self.history
+        )
 
-# ----------------------------
-# Log updater + title animation
-# ----------------------------
+        # Title bar
+        self.title_bar = TitleBar()
+        self.title_bar_widget = Window(
+            height=1,
+            content=self.title_bar.control,
+            style="reverse",
+            align=WindowAlign.CENTER
+        )
 
-async def ui_updater(app, state, title_sleep=0.5, main_sleep=0.5):
-    last_snapshot = ""
-    title_timer = time.monotonic()
+        self.title_separator = Window(height=1, char="-", style="class:line")
 
-    while True:
-        snapshot = log_buffer.get_text()
-        now = time.monotonic()
+        self.layout = Layout(
+            HSplit([
+                self.title_bar_widget,
+                self.title_separator,
+                self.output_field,
+                Window(height=1, char="-"),
+                self.input_field,
+            ]),
+            focused_element=self.input_field
+        )
+
+        # UI state
+        self.last_snapshot = ""
         
-        # Title animation
-        if now - title_timer >= title_sleep:
-            title_bar.tick_siren()
-            title_bar.update_lines(len(snapshot.splitlines()))
-            title_timer = now
-        
-        if snapshot != last_snapshot:
+        # Application
+        kb = build_keybindings(ctx.ui)
+        self.app = Application(
+            layout=self.layout,
+            key_bindings=kb,
+            mouse_support=True,
+            full_screen=True
+        )
+    
+    
+    async def shutdown(self):
+        self.app.exit()
 
-            buf = output_field.buffer
-            doc = buf.document
+    # --------------------------------------------------
+    # UI Update Loop
+    # --------------------------------------------------
 
-            # Tail follow only if user is already near bottom
-            at_bottom = doc.cursor_position >= max(len(doc.text) - 5, 0)
+    async def update_ui(self, title_sleep=0.5, main_sleep=0.5):
+        last_snapshot = ""
+        title_timer = time.monotonic()
 
-            if state.get("force_scroll", False) or at_bottom:
-                cursor = len(snapshot)
-                state["force_scroll"] = False
-            else:
-                cursor = doc.cursor_position
+        while True:
+            snapshot = log_buffer.get_text()
+            now = time.monotonic()
 
-            buf.set_document(
-                Document(
-                    snapshot,
-                    cursor_position=min(cursor, len(snapshot))
-                ),
-                bypass_readonly=True
-            )
+            # Title animation
+            if now - title_timer >= title_sleep:
+                self.title_bar.tick_siren()
+                self.title_bar.update_lines(len(snapshot.splitlines()))
+                title_timer = now
 
-            last_snapshot = snapshot
-            
-        app.invalidate()
-        await asyncio.sleep(0.5)
+            if snapshot != last_snapshot:
+                buf = self.output_field.buffer
+                doc = buf.document
 
+                at_bottom = doc.cursor_position >= max(len(doc.text) - 5, 0)
+
+                if self.ctx.state.get("force_scroll", False) or at_bottom:
+                    cursor = len(snapshot)
+                    self.ctx.state["force_scroll"] = False
+                else:
+                    cursor = doc.cursor_position
+
+                buf.set_document(
+                    Document(
+                        snapshot,
+                        cursor_position=min(cursor, len(snapshot))
+                    ),
+                    bypass_readonly=True
+                )
+
+                last_snapshot = snapshot
+
+            self.app.invalidate()
+            await asyncio.sleep(main_sleep)
