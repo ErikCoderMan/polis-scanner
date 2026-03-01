@@ -66,7 +66,7 @@ async def graceful_shutdown(
             )
 
     # --------------------------------------------------
-    # Stop event loop (GUI path)
+    # if GUI version, stop loop
     # --------------------------------------------------
 
     if ctx.is_gui() and ctx.loop:
@@ -76,23 +76,10 @@ async def graceful_shutdown(
             logger.exception("Failed stopping event loop")
 
     # --------------------------------------------------
-    # GUI cleanup hook
+    # Stop either Prompt Toolkit objekt or Tkinter objekt
     # --------------------------------------------------
-
-    if ctx.is_gui() and ctx.root:
-        try:
-            ctx.root.after(0, ctx.root.quit)
-        except Exception:
-            logger.exception("GUI shutdown failed")
-
-    # --------------------------------------------------
-    # CLI cleanup hook
-    # --------------------------------------------------
-
-    if ctx.is_cli() and ctx.interactive and ctx.app_cli:
-        try:
-            ctx.app_cli.exit()
-        except Exception:
-            logger.exception("CLI shutdown failed")
+    
+    if ctx.ui:
+        await ctx.ui.shutdown()
 
     logger.info("Shutdown completed")

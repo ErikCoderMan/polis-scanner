@@ -35,11 +35,11 @@ def run_gui(ctx: RuntimeContext) -> int:
     ctx.root = root
     root.title(f"{settings.app_name} v{settings.version}")
     
-    app = GUIApp(ctx)
+    gui = GUIApp(ctx)
     
     try:
         # Start Tkinter's blocking event loop (must run on main thread)
-        root.mainloop()
+        gui.root.mainloop()
         
     finally:
         logger.info("GUI closed")
