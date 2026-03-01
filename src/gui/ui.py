@@ -1,3 +1,9 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import tkinter as tk
 import asyncio
 from datetime import datetime
@@ -6,23 +12,24 @@ from src.core.config import settings
 from src.core.logger import get_logger
 from src.commands.commands import handle_command
 from src.utils.history import CommandHistory
+
 logger = get_logger(__name__)
 
 class GUIApp:
-    def __init__(self, root: tk.Tk, loop: asyncio.AbstractEventLoop):
+    def __init__(self, ctx: RuntimeContext = None):
+        if not ctx:
+            logger.error(f"missing RuntimeContext")
+            
+        self.ctx = ctx
+        self.ctx.app_gui = self
         
         # ---- loops ----
         
         # tkinter loop (main thread)
-        self.root = root
+        self.root = ctx.root
         
         # asyncio background loop (sepparate thread)
-        self.loop = loop
-        
-        # ---- scrolling ----
-        
-        # used to autoscroll to bottom on command execution
-        self.force_scroll = False
+        self.loop = ctx.loop
         
         # ---- buffers ----
         
@@ -99,12 +106,9 @@ class GUIApp:
 
         # Dispatch async command to background loop
         asyncio.run_coroutine_threadsafe(
-            handle_command(text=text, loop=self.loop, root=self.root),
+            handle_command(text=text, ctx=self.ctx),
             self.loop
         )
-
-        # Request autoscroll after command output
-        self.force_scroll = True
     
     def history_up(self, event):
         text = self.history.previous()
@@ -125,8 +129,6 @@ class GUIApp:
         self.input.delete(0, tk.END)
         self.input.insert(0, text)
         self.input.icursor(tk.END)
-    
-    
 
     # ----------------------------
     # Updater
@@ -134,6 +136,7 @@ class GUIApp:
 
     def schedule_update(self):
         self.update_ui()
+        self.ctx.state["force_scroll"] = False
         self.root.after(500, self.schedule_update)
 
     def update_ui(self):
@@ -162,7 +165,7 @@ class GUIApp:
             self.output.delete("1.0", tk.END)
             self.output.insert(tk.END, snapshot)
 
-            if bottom_visible or self.force_scroll:
+            if bottom_visible or self.ctx.state.get("force_scroll", None):
                 self.output.see(tk.END)
 
             self.output.config(state="disabled")

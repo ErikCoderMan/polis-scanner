@@ -1,11 +1,12 @@
 import sys
 import argparse
 import asyncio
-
+from src.core.runtime import RuntimeContext
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--cli", action="store_true")
+    parser.add_argument("--gui", action="store_true")
     parser.add_argument("command", nargs="*")
     
     args, unknown = parser.parse_known_args()
@@ -23,15 +24,15 @@ async def main_async(args):
     """
     
     # -----------------------------
-    # Direct command mode
+    # Non interactive CLI
     # -----------------------------
     if args.command:
         from src.commands.commands import handle_command
         from src.ui.log_buffer import log_buffer
-
+        
         log_buffer.interactive_mode = False
         
-        await handle_command(" ".join(args.command), interactive=False)
+        await handle_command(text=" ".join(args.command), ctx=RuntimeContext())
 
         if log_buffer and len(log_buffer) > 0:
             print("\n".join(str(x) for x in log_buffer))
@@ -39,10 +40,14 @@ async def main_async(args):
         return 0
     
     # -----------------------------
-    # Interactive CLI mode
+    # Interactive CLI
     # -----------------------------
+    ctx = RuntimeContext()
+    ctx.mode = "cli"
+    ctx.interactive = True
+    
     from src.cli.main import run_cli
-    return await run_cli()
+    return await run_cli(ctx)
 
 
 def main():
@@ -53,13 +58,20 @@ def main():
     
     args = parse_args()
     
-    # ---- CLI mode ----
+    # ---- CLI ----
     if args.cli or args.command:
         return asyncio.run(main_async(args))
     
-    # ---- GUI mode (default) ----
+    # -----------------------------
+    # Interactive GUI
+    # -----------------------------
     from src.gui.main import run_gui
-    return run_gui()
+    
+    ctx = RuntimeContext()
+    ctx.mode = "gui"
+    ctx.interactive = True
+        
+    return run_gui(ctx)
 
 
 if __name__ == "__main__":

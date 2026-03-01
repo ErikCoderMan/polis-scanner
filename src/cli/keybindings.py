@@ -1,9 +1,15 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.core.runtime import RuntimeContext
+
 import asyncio
 from prompt_toolkit.key_binding import KeyBindings
-from .ui import output_field, input_field
 from src.commands.commands import handle_command
+from .ui import output_field, input_field
 
-def build_keybindings(loop, root=None):
+def build_keybindings(ctx: RuntimeContext = None):
     kb = KeyBindings()
     
     @kb.add("enter")
@@ -18,7 +24,7 @@ def build_keybindings(loop, root=None):
 
         buffer.validate_and_handle()
 
-        asyncio.create_task(handle_command(text=text, loop=loop, root=root))
+        asyncio.create_task(handle_command(text=text, ctx=ctx))
 
     @kb.add("pageup")
     def _(event):
