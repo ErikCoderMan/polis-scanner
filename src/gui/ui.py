@@ -19,9 +19,9 @@ class GUIApp:
     def __init__(self, ctx: RuntimeContext = None):
         if not ctx:
             logger.error(f"missing RuntimeContext")
-            
+        
+        ctx.ui = self
         self.ctx = ctx
-        self.ctx.app_gui = self
         
         # ---- loops ----
         
@@ -49,6 +49,10 @@ class GUIApp:
         
         self.build_layout()
         self.schedule_update()
+
+
+    async def shutdown(self):
+        self.root.after(0, self.root.quit)
 
     # ----------------------------
     # Layout

@@ -15,8 +15,7 @@ class RuntimeContext:
     interactive: bool = False
     loop: asyncio.AbstractEventLoop | None = None
     root: tk.Tk | None = None
-    app_cli: object | None = None
-    app_gui: object | None = None
+    ui: object | None = None
     scheduler: Scheduler = Scheduler()
     state: dict = field(default_factory=dict)
 
