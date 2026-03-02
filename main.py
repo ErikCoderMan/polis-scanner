@@ -22,28 +22,29 @@ async def main_async(args):
     Otherwise if no arguments have been provided,
     then start interactive mode that runs until user enters 'exit/quit'
     """
+    ctx = RuntimeContext()
+    ctx.mode = "cli"
     
     # -----------------------------
     # Non interactive CLI
     # -----------------------------
     if args.command:
+        ctx.interactive = False
         from src.commands.commands import handle_command
         from src.ui.log_buffer import log_buffer
         
         log_buffer.interactive_mode = False
         
-        await handle_command(text=" ".join(args.command), ctx=RuntimeContext())
-
-        if log_buffer and len(log_buffer) > 0:
-            print("\n".join(str(x) for x in log_buffer))
+        await handle_command(text=" ".join(args.command), ctx=ctx)
+        
+        while ctx.scheduler.running_tasks():
+            await asyncio.sleep(0.5)
 
         return 0
     
     # -----------------------------
     # Interactive CLI
     # -----------------------------
-    ctx = RuntimeContext()
-    ctx.mode = "cli"
     ctx.interactive = True
     
     from src.cli.main import run_cli
