@@ -1,12 +1,17 @@
 # polis-scanner
 Python project that shows swedish crime events data using swedish police public API
 ## Overview  
-polis-scanner is a CLI-based event scanner that fetches and stores public police event data from an external API.
-The application supports searching, filtering, ranking, and browsing stored events through an interactive terminal UI.
+polis-scanner is a both GUI and CLI based event scanner that fetches and stores  
+public police event data from an external API.  
+
+The application supports searching, filtering, ranking, and browsing  
+stored events through an interactive terminal UI.
 
 Features include
 - Background event fetching and local caching
-- Interactive CLI with log-buffered output
+- Interactive GUI or CLI with log-buffered output
+- Direct command mode support using command arguments from terminal  
+  (this also makes the project scriptable)
 - Search engine with scoring-based ranking
 - Group statistics mode
 - Command history navigation
@@ -22,19 +27,19 @@ using either Linux terminal or Windows PowerShell:
 git clone https://github.com/ErikCoderMan/polis-scanner.git
 cd polis-scanner
 ```
-2. Create and activate virtual environment
-   - Windows (PowerShell)  
-     ```
-     python3 -m venv .venv
-     .venv\Scripts\Activate.ps1
-     ```
-   - Linux (Terminal)  
-     ```
-     python3 -m venv .venv
-     source .venv/bin/activate
-     ```
+2. Create and activate virtual environment:  
+ - Windows (PowerShell):  
+```
+python3 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+- Linux (Terminal):  
+```
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
-3. Install dependencies
+3. Install dependencies:
 ```
 pip install -r requirements.txt
 ```
@@ -43,7 +48,7 @@ pip install -r requirements.txt
 
 (Optional) Create a file called `.env` in the project root if you want custom settings.
 
-Example
+Example (check src.core.config for more):
 
     POLIS_SCANNER_NAME=polis-scanner
     POLIS_SCANNER_VERSION=0.0.1
@@ -56,31 +61,23 @@ Example
 
 ## Running the application
 Replace `python3` with either `python`, `python3`, `py`  
-depending on your system.
-### CLI mode (default)
+depending on your system.  
 
+Execute following from project root:  
+### GUI mode (default)
     python3 main.py
 
-### GUI mode (planned)
-
+### CLI mode
     python3 main.py --gui
 
-    GUI is not yet implemented
+### Direct CLI mode
+    python3 main.py <command> [args]
 
 ### Commands
 ```
-Commands:
+Data:
     refresh
         Fetch the latest events from the API.
-
-    poll [start <interval> | stop]
-        Repeatedly refresh events (fetch) at a fixed interval.
-
-        Interval format: <int>[s|m|h|d]
-        (seconds, minutes, hours, days).
-        Examples: 30s, 5m, 1h, 2d.
-
-        Use low values with care to avoid rate limiting.
 
     load
         Display events stored in local storage.
@@ -95,20 +92,22 @@ Commands:
     search [options]
         Advanced search with filtering, sorting and limit.
 
-        Default mode: strict filtering (no relevance scoring).
-        Only exact matches are returned unless --strict false is used.
-
-        To enable relevance ranking:
-            --strict false
-
     rank --group <field> [options]
         Group events by a field and display statistics.
 
-        Filters (--text, --fields, --filters) are applied before grouping.
+Tasks:
+    poll [interval]
+        Repeatedly refresh events at a fixed interval.
 
-        Default sorting:
-            If --text is used → avg_score, count, group
-            Otherwise        → count, group
+        Interval format: <int>[s|m|h|d]
+        (seconds, minutes, hours, days).
+        Examples: 30s, 5m, 1h, 2d.
+
+    tasks
+        List running background tasks.
+
+    kill <name>
+        Stop a running task.
 
 Search options:
     --text <text>
@@ -116,7 +115,7 @@ Search options:
 
     --fields <field1 field2 ...>
         Fields used for text matching.
-        Default: name, summary, type, location.name.
+        (Default all): name, summary, type, location.name.
 
     --filters <field1 value1 field2 value2 ...>
         Exact field-value filtering.
@@ -213,9 +212,12 @@ Other:
 
     Async event fetching with retry backoff
     Thread-safe log buffer using locks
-    Modular separation between API, services, CLI, and utilities
+    Modular separation between API, services, GUI/CLI, and utilities
 
 ## License
 
-    Free to use for personal purposes. The software is provided without warranty and comes with no guarantees of support or reliability.  
+    Free to use for personal purposes. 
+    The software is provided without warranty 
+    and comes with no guarantees of support or reliability.  
+
     Use at your own risk.

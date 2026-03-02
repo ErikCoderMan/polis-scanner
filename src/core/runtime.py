@@ -16,7 +16,7 @@ class RuntimeContext:
     loop: asyncio.AbstractEventLoop | None = None
     root: tk.Tk | None = None
     ui: object | None = None
-    scheduler: Scheduler = Scheduler()
+    scheduler: Scheduler = field(default_factory=Scheduler)
     state: dict = field(default_factory=dict)
 
     def is_gui(self) -> bool:
