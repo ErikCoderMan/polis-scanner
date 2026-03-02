@@ -22,7 +22,7 @@ async def run_cli(ctx: RuntimeContext):
     cli = CLIApp(ctx)
 
     # start UI updater worker
-    ctx.scheduler.spawn("cli_ui", cli.update_ui())
+    asyncio.create_task(cli.update_ui())
 
     await cli.app.run_async()
     return 0

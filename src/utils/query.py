@@ -11,60 +11,41 @@ logger = get_logger(__name__)
 # PARSE
 # ==========================================================
 
-def parse_interval(args: list[str] | str) -> dict:
-    args = " ".join(args) if isinstance(args, list) else args
-    args = args.lower().strip()
+def parse_command(raw: list[str] | str) -> tuple[str, list[str]]:
+    text = " ".join(raw) if isinstance(raw, list) else raw
+    parts = text.strip().lower().split(" ", 1)
+    
+    if not parts:
+        return "", []
+    
+    cmd = parts[0]
+    args = parts[1].split() if len(parts) > 1 else []
+    
+    return cmd, args
 
-    multipliers = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+import re
 
-    result = {
-        "toggle": None,
-        "interval_s": None,
-        "interval_str": None,
+def parse_interval(value: str | list[str]) -> int:
+    if isinstance(value, list):
+        value = " ".join(value)
+
+    value = value.lower().strip()
+
+    multipliers = {
+        "s": 1,
+        "m": 60,
+        "h": 3600,
+        "d": 86400,
     }
 
-    if any(a in args for a in ("start", "on")) and not any(a in args for a in ("stop", "off")):
-        result["toggle"] = "start"
-        
-    elif any(a in args for a in ("stop", "off")) and not any(a in args for a in ("start", "on")):
-        result["toggle"] = "stop"
-        return result
-        
-    else:
-        return result
-
-    match = re.search(r"(\d+)([smhd])", args)
-
+    match = re.search(r"(\d+)([smhd])", value)
     if not match:
-        interval_str = settings.poll_interval or "5m"
-        match = re.search(r"(\d+)([smhd])", interval_str)
-
-    if not match:
-        raise ValueError("Invalid interval format")
+        raise ValueError("Invalid interval format. Expected <int>[s|m|h|d]")
 
     number = int(match.group(1))
     unit = match.group(2)
 
-    seconds = number * multipliers[unit]
-    
-    # if seconds is lower then recomended limit
-    if settings.poll_interval_lowest_allowed_s < seconds < settings.poll_interval_lowest_recomended_s:
-        logger.warning(f"Interval is lower then {settings.poll_interval_lowest_recomended_s}s, it works but is not recomended for very long periods")
-    
-    # if seconds is lower then allowed limit
-    elif seconds < settings.poll_interval_lowest_allowed_s:
-        if not "--force" in args:
-            logger.error(f"Can not set interval value below allowed minimum value of '{settings.poll_interval_lowest_allowed_s}s', if you are sure, bypass with '--force' altough it is not recomended")
-            return # early return to prevent poll start
-        
-        # runs only with '--force'
-        else:
-            logger.warning(f"Interval set to {seconds}s with '--force', it is below minimum allowed value of '{settings.poll_interval_lowest_allowed_s}s' it is not adviced to poll this frequently")
-
-    result["interval_str"] = f"{number}{unit}"
-    result["interval_s"] = seconds
-
-    return result
+    return number * multipliers[unit]
 
 
 def parse_query(args: list[str] | str) -> dict:

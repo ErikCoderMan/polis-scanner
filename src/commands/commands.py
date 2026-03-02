@@ -11,8 +11,9 @@ from src.services.fetcher import refresh_events, load_events
 from src.api.polis import PolisAPIError
 from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
-from src.utils.query import query_events, parse_query, parse_interval
+from src.utils.query import query_events, parse_query, parse_interval, parse_command
 from src.core.lifecycle import graceful_shutdown
+from src.core.scheduler import WorkerAlreadyRunningError
 
 logger = get_logger(__name__)
 
@@ -22,19 +23,11 @@ logger = get_logger(__name__)
 # -------------------------
 
 async def cmd_help(args=None, ctx: RuntimeContext=None):
-    logger.info("""Showing help...
-Commands:
+    logger.info("Showing help...")
+    log_buffer.write("""
+Data:
     refresh
         Fetch the latest events from the API.
-
-    poll [start <interval> | stop]
-        Repeatedly refresh events (fetch) at a fixed interval.
-
-        Interval format: <int>[s|m|h|d]
-        (seconds, minutes, hours, days).
-        Examples: 30s, 5m, 1h, 2d.
-
-        Use low values with care to avoid rate limiting.
 
     load
         Display events stored in local storage.
@@ -49,20 +42,22 @@ Commands:
     search [options]
         Advanced search with filtering, sorting and limit.
 
-        Default mode: strict filtering (no relevance scoring).
-        Only exact matches are returned unless --strict false is used.
-
-        To enable relevance ranking:
-            --strict false
-
     rank --group <field> [options]
         Group events by a field and display statistics.
 
-        Filters (--text, --fields, --filters) are applied before grouping.
+Tasks:
+    poll [interval]
+        Repeatedly refresh events at a fixed interval.
 
-        Default sorting:
-            If --text is used → avg_score, count, group
-            Otherwise        → count, group
+        Interval format: <int>[s|m|h|d]
+        (seconds, minutes, hours, days).
+        Examples: 30s, 5m, 1h, 2d.
+
+    tasks
+        List running background tasks.
+
+    kill <name>
+        Stop a running task.
 
 Search options:
     --text <text>
@@ -140,7 +135,6 @@ Examples:
     search --text polis --filters type brand location.name stockholm --limit 3
     find brand stockholm
     rank --group location.name --filters type brand
-            
     """)
 
 
@@ -322,103 +316,129 @@ async def cmd_clear(args=None, ctx: RuntimeContext=None):
 
 
 async def cmd_poll(args, ctx: RuntimeContext = None):
-    async def _run():
-        if not ctx or not ctx.scheduler:
-            logger.error("Scheduler not available")
-            return
-
-        scheduler = ctx.scheduler
-
-        # ---- STATUS ----
-
-        if not args:
-            if scheduler.has_worker("poll"):
-                logger.info("Poll is ON, use 'poll stop' to stop")
-            else:
-                logger.info("Poll is OFF, use 'poll start [INTERVAL]' to start")
-            return
-
-        query = parse_interval(args)
-        if not query:
-            return
-
-        toggle = query.get("toggle")
-
-        # ---- STOP ----
-
-        if toggle == "stop":
-
-            if not scheduler.has_worker("poll"):
-                logger.warning("Poll is not running")
-                return
-
-            logger.info("Stopping poll loop...")
-            await scheduler.stop_and_wait(
-                "poll",
-                timeout=settings.shutdown_grace_period
-            )
-            logger.info("Poll stopped")
-            return
-
-        # ---- START ----
-
-        if toggle == "start":
-
-            if scheduler.has_worker("poll"):
-                logger.warning("Poll already running")
-                return
-
-            logger.info("Starting poll loop...")
-
-            async def poll_loop():
-                logger.info(
-                    f"Poll started, interval={query['interval_s']}s"
-                )
-
-                try:
-                    while True:
-                        new_events = await refresh_events()
-
-                        if new_events:
-                            for event in new_events:
-                                log_buffer.write(
-                                    f"POLL: {event['id']} - "
-                                    f"{event['name']} - "
-                                    f"{event['summary']}"
-                                )
-
-                        await asyncio.sleep(query["interval_s"])
-
-                except asyncio.CancelledError:
-                    logger.info("Poll task cancelled")
-                    raise
-
-                finally:
-                    logger.debug("Poll loop exited")
-
-            if ctx.interactive:
-                scheduler.spawn("poll", poll_loop())
-            else:
-                await poll_loop()
-
-            return
-
-        logger.warning(
-            "Expected 'start [interval]' or 'stop'"
-        )
+    # -----------------------------
+    # Resolve interval
+    # -----------------------------
     
-    await _run()
+    seconds = None
 
+    # 1. Try args
+    if args:
+        try:
+            seconds = parse_interval(args)
+        except ValueError:
+            logger.warning("Invalid interval format from arguments")
+
+    # 2. Try config
+    if not seconds:
+        if settings.poll_interval:
+            try:
+                seconds = parse_interval(settings.poll_interval)
+                logger.info(f"Interval set to config value {settings.poll_interval}")
+            except ValueError:
+                logger.error("Invalid interval format from config")
+
+    # 3. Fallback
+    if not seconds:
+        logger.warning("Using fallback interval 5m")
+        seconds = 5 * 60
+
+    # -----------------------------
+    # Policy validation
+    # -----------------------------
+
+    if seconds < settings.poll_interval_lowest_allowed_s:
+        if "--force" not in (args or []):
+            logger.error(
+                f"Minimum allowed interval is "
+                f"{settings.poll_interval_lowest_allowed_s}s. "
+                f"Use --force to override."
+            )
+            return
+
+        logger.warning("Running below allowed minimum with --force")
+
+    elif seconds < settings.poll_interval_lowest_recomended_s:
+        logger.warning("Interval is below recommended minimum")
+
+    # -----------------------------
+    # Poll loop
+    # -----------------------------
+
+    logger.info(f"Poll started, interval={seconds}s")
+
+    try:
+        while True:
+            new_events = await refresh_events()
+
+            if new_events:
+                for event in new_events:
+                    log_buffer.write(
+                        f"POLL: {event['id']} - "
+                        f"{event['name']} - "
+                        f"{event['summary']}"
+                    )
+
+            await asyncio.sleep(seconds)
+
+    except asyncio.CancelledError:
+        logger.info("Poll cancelled")
+        raise
+
+
+async def cmd_kill(args, ctx: RuntimeContext=None):
+    if not args:
+        logger.warning("Please specify command to kill")
+        return
+
+    name = args[0]
+
+    if not ctx.scheduler.has_worker(name):
+        logger.warning(f"No running task named '{name}'")
+        return
+
+    logger.info(f"Killing '{name}'...")
+    await ctx.scheduler.stop_and_wait(name)
+    logger.info(f"'{name}' stopped")
+
+
+async def cmd_tasks(args=None, ctx: RuntimeContext = None):
+    if not ctx or not ctx.scheduler:
+        logger.error("Scheduler not available")
+        return
+
+    workers = ctx.scheduler.list_workers()
+    result = workers
+    
+    if "tasks" in [name for name in result.keys()]:
+        result.pop("tasks")
+
+    if not result:
+        logger.info("No tasks registered")
+        return
+    
+    logger.info("Listing tasks...")
+    for name, task in result.items():
+        status = (
+            "running"
+            if not task.done()
+            else "cancelled"
+            if task.cancelled()
+            else "done"
+        )
+
+        log_buffer.write(
+            f"TASK: {name} | status={status}"
+        )
+
+    logger.info(f"Total tasks (excluding self): {len(result)}")
 
 # --------------------
 # command handler
 # --------------------
 
 async def handle_command(text, ctx: RuntimeContext=None):
-    parts = text.strip().lower().split(" ", 1)
-
-    cmd = parts[0]
-    args = parts[1].split() if len(parts) > 1 else []
+    cmd, args = parse_command(text)
 
     if not cmd:
         return
@@ -441,19 +461,30 @@ async def handle_command(text, ctx: RuntimeContext=None):
         "search": cmd_search,
         "rank": cmd_rank,
         "clear": cmd_clear,
-        "poll": cmd_poll
+        "poll": cmd_poll,
+        "kill": cmd_kill,
+        "tasks": cmd_tasks
     }
+    
+    try:
+        handler = command_map.get(cmd)
 
-    handler = command_map.get(cmd)
+        if not handler:
+            logger.warning("Unknown command")
+            ctx.state["force_scroll"] = True
+            return
 
-    if handler:
         logger.info(f"cmd='{cmd}', args='{' '.join(args)}'")
-        
-        await handler(args=args, ctx=ctx)
-        
-    else:
-        logger.warning("Unknown command")
-        
-        
-    ctx.state["force_scroll"] = True
+
+        try:
+            ctx.scheduler.spawn(
+                cmd,
+                lambda: handler(args=args, ctx=ctx)
+            )
+
+        except WorkerAlreadyRunningError:
+            logger.warning(f"Command '{cmd}' is already running")
+            
+    finally:
+        ctx.state["force_scroll"] = True
 
