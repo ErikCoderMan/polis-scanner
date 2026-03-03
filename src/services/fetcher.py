@@ -10,7 +10,24 @@ logger = get_logger(__name__)
 
 STATE_FILE = settings.cache_dir / "last_event.json"
 DATA_FILE = settings.data_dir / "events.json"
+BASE_URL = settings.polis_base_url
 
+def get_event(event_id: int, data_file: Path = DATA_FILE) -> Dict:
+    if not event_id:
+        return
+        
+    events = load_events()
+    
+    if not events:
+        return
+    
+    event = next((e for e in events if e["id"] == event_id), None)
+    
+    if event and event.get("url") and not event.get("url").startswith("http"):
+        event["url"] =  f"{settings.polis_base_url}{event['url']}"
+    
+    return event
+    
 
 def load_events(data_file: Path = DATA_FILE) -> List[Dict]:
     """Load all saved events from data_file, safely handling missing/empty/invalid JSON"""
