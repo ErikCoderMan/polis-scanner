@@ -62,14 +62,18 @@ class GUIApp:
         # ---- build layout ----
         
         self.build_layout()
+        self.root.after(100, lambda: self.input.focus_set())
         self.schedule_update()
     
     def toggle_compact_mode(self):
         self.compact_mode = True if not self.compact_mode else False
         if self.compact_mode:
             self.detail.grid_remove()
+            self.footer.grid_remove()
+            self.footer_label.grid_remove()
         else:
             self.detail.grid()
+            self.footer_label.grid()
     
     def clicked_recently(self):
         now = time.perf_counter()
@@ -122,6 +126,10 @@ class GUIApp:
         self.input.grid(row=0, column=1, sticky="ew")
         
         self.input.bind("<Return>", self.on_enter)
+        self.input.bind("<Up>", self.history_up)
+        self.input.bind("<Down>", self.history_down)
+        self.input.bind("<Prior>", lambda e: (self.output.yview_scroll(-1, "pages"), "break"))
+        self.input.bind("<Next>", lambda e: (self.output.yview_scroll(1, "pages"), "break"))
 
         # ---- Command Toolbar ----
         self.command_toolbar = tk.Frame(self.root)
@@ -199,11 +207,6 @@ class GUIApp:
         self.detail.bind("<Leave>", self.on_detail_leave)
         
         # ---- Footer widget ----
-        self.footer = tk.Frame(self.root)
-        self.footer.grid(row=6, column=0, sticky="ew")
-
-        self.footer_label = tk.Label(self.footer, anchor="w")
-        self.footer_label.grid(row=0, column=0, sticky="ew")
         self.footer = tk.Frame(self.root)
         self.footer.grid(row=6, column=0, sticky="ew")
 
