@@ -5,12 +5,18 @@ if TYPE_CHECKING:
     from src.core.runtime import RuntimeContext
 
 import asyncio
-
+from src.core.registry import command
 from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
 
 logger = get_logger(__name__)
 
+@command(
+    name="tasks",
+    usage="tasks",
+    description="List running background tasks.",
+    category="tasks"
+)
 async def cmd_tasks(args=None, ctx: RuntimeContext = None):
     if not ctx or not ctx.scheduler:
         logger.error("Scheduler not available")
@@ -37,7 +43,7 @@ async def cmd_tasks(args=None, ctx: RuntimeContext = None):
         )
 
         log_buffer.write(
-            f"TASK: {name} | status={status}"
+            f"TASK: {name} - status={status}"
         )
 
-    logger.info(f"Total tasks (excluding self): {len(result)}")
+    logger.info(f"Total tasks: {len(result)}")

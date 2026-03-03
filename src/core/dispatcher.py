@@ -10,6 +10,7 @@ from src.utils.query import parse_command
 from src.core.logger import get_logger
 from src.core.scheduler import WorkerAlreadyRunningError
 from src.core.lifecycle import graceful_shutdown
+from src.api.polis import PolisAPIError
 
 from src.commands.refresh import cmd_refresh
 from src.commands.load import cmd_load
@@ -22,6 +23,9 @@ from src.commands.clear import cmd_clear
 from src.commands.poll import cmd_poll
 from src.commands.kill import cmd_kill
 from src.commands.tasks import cmd_tasks
+from src.commands.exit import cmd_exit
+
+from src.core.registry import get_commands
 
 logger = get_logger(__name__)
 
@@ -31,17 +35,8 @@ logger = get_logger(__name__)
 
 async def handle_command(text, ctx: RuntimeContext=None):
     cmd, args = parse_command(text)
-
+    
     if not cmd:
-        return
-
-    if cmd in ("exit", "quit"):
-        if "now" in args:
-            await graceful_shutdown(ctx=ctx, force=True)
-        
-        else:
-            await graceful_shutdown(ctx=ctx, force=False)
-        
         return
 
     command_map = {
@@ -55,7 +50,9 @@ async def handle_command(text, ctx: RuntimeContext=None):
         "clear": cmd_clear,
         "poll": cmd_poll,
         "kill": cmd_kill,
-        "tasks": cmd_tasks
+        "tasks": cmd_tasks,
+        "exit": cmd_exit,
+        "quit": cmd_exit
     }
     
     try:
@@ -69,6 +66,10 @@ async def handle_command(text, ctx: RuntimeContext=None):
         logger.info(f"cmd='{cmd}', args='{' '.join(args)}'")
 
         try:
+            if cmd in ("exit", "quit"):
+                # Special case for shutdown to evade recursion loop error
+                await handler(args=args, ctx=ctx)
+            
             ctx.scheduler.spawn(
                 cmd,
                 lambda: handler(args=args, ctx=ctx)
@@ -76,6 +77,9 @@ async def handle_command(text, ctx: RuntimeContext=None):
 
         except WorkerAlreadyRunningError:
             logger.warning(f"Command '{cmd}' is already running")
+        
+        except PolisAPIError:
+            logger.error("Polis API error while fetching")
             
     finally:
         ctx.state["force_scroll"] = True

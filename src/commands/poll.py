@@ -11,9 +11,21 @@ from src.core.logger import get_logger
 from src.ui.log_buffer import log_buffer
 from src.utils.query import parse_interval
 from src.services.fetcher import refresh_events
+from src.core.registry import command
 
 logger = get_logger(__name__)
 
+@command(
+    name="poll",
+    usage="poll [interval]",
+    description=(
+        "Repeatedly refresh events at a fixed interval.\n\n"
+        "Interval format: <int>[s|m|h|d]\n"
+        "(seconds, minutes, hours, days).\n"
+        "Example interval values: 30s, 5m, 1h, 2d."
+    ),
+    category="tasks"
+)
 async def cmd_poll(args, ctx: RuntimeContext = None):
     # -----------------------------
     # Resolve interval

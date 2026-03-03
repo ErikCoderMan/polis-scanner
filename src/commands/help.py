@@ -4,124 +4,61 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.core.runtime import RuntimeContext
 
-import asyncio
+from collections import defaultdict
 
 from src.core.logger import get_logger
+from src.core.registry import command, get_commands
 from src.ui.log_buffer import log_buffer
 
 logger = get_logger(__name__)
 
-async def cmd_help(args=None, ctx: RuntimeContext=None):
-    logger.info("Showing help...")
-    log_buffer.write("""
-Data:
-    refresh
-        Fetch the latest events from the API.
-
-    load
-        Display events stored in local storage.
-
-    more <id>
-        Show full details for a specific event by its ID.
-
-    find <text>
-        Quick search using strict filtering (default behavior).
-        Only events matching all words are returned.
-
-    search [options]
-        Advanced search with filtering, sorting and limit.
-
-    rank --group <field> [options]
-        Group events by a field and display statistics.
-
-Tasks:
-    poll [interval]
-        Repeatedly refresh events at a fixed interval.
-
-        Interval format: <int>[s|m|h|d]
-        (seconds, minutes, hours, days).
-        Examples: 30s, 5m, 1h, 2d.
-
-    tasks
-        List running background tasks.
-
-    kill <name>
-        Stop a running task.
-
-Search options:
-    --text <text>
-        Match all words in the specified fields.
-
-    --fields <field1 field2 ...>
-        Fields used for text matching.
-        (Default all): name, summary, type, location.name.
-
-    --filters <field1 value1 field2 value2 ...>
-        Exact field-value filtering.
-
-    --sort <field1 field2 ...>
-        Sort events by specified event fields.
-        Examples:
-            score
-            datetime
-            name
-            type
-            location.name
-
-        Multiple fields can be provided in priority order.
-
-    --limit <n>
-        Limit the number of returned results.
-
-    --strict <true|false>
-        true  (default)  → hard filtering only
-        false            → enable relevance scoring and ranking
-
-Rank options:
-    --group <field>
-        Field used for grouping.
-
-    --text <text>
-        Apply text filtering before grouping.
-
-    --fields <field1 field2 ...>
-        Fields used for text filtering.
-
-    --filters <field1 value1 ...>
-        Exact field-value filters before grouping.
-
-    --sort <field1 field2 ...>
-        Sort grouped results.
-        Available fields:
-            count
-            avg_score
-            group
-
-        Multiple fields can be provided in priority order.
-
-    --limit <n>
-        Limit number of groups returned.
+@command(
+    name="help",
+    usage="help [prefix1 prefix2 prefix3 ...]",
+    description=(
+        "Display help for all commands or a filtered subset.\n\n"
+        "If one or more command prefixes are provided, only commands\n"
+        "starting with those prefixes are shown.\n"
+        "If no arguments are given, all commands are listed.\n\n"
+        "Examples:\n"
+        "    help po tas find    → shows: poll, tasks, find\n"
+        "    help refresh        → shows: refresh\n"
+        "    help                → shows all commands"
+    ),
+    category="other"
+)
+async def cmd_help(args=None, ctx=None):
+    commands = get_commands()
+    grouped = defaultdict(list)
     
-    --strict <true|false>
-        true  (default)  → hard filtering only
-        false            → enable relevance scoring and ranking
+    for cmd, meta in commands.items():
+        if args:
+            if any(cmd.startswith(arg) for arg in args):
+                grouped[meta.category].append(meta)
         
-Other:
-    help
-        Display this help message.
+        else:
+            grouped[meta.category].append(meta)
+            
+    if not grouped:
+        logger.warning("No results for arguments")
+        return
 
-    clear
-        Clear the output screen.
-
-    exit / quit [now]
-        Quit the program.
+    logger.info("Showing help...\n")
+    
+    showed = 0
+    for category in sorted(grouped.keys()):
+        log_buffer.write(f"Category {category.capitalize()}:\n")
         
-        Options:
-            now            → Do not wait for background tasks, quit imediately
-            (no arguments) → Program will make a clean exit, properly wait and close tasks
-
-Examples:
-    search --text polis --filters type brand location.name stockholm --limit 3
-    find brand stockholm
-    rank --group location.name --filters type brand
-    """)
+        for meta in sorted(grouped[category], key=lambda m: m.name):
+            showed += 1
+            space = " " * 4
+            log_buffer.write(f"{space}{meta.usage}")
+            desc_lines = meta.description.splitlines()
+            
+            for line in desc_lines:
+                space = " " * 8
+                log_buffer.write(f"{space}{line}\n")
+            
+            log_buffer.newline()
+            
+    logger.info(f"Returned {showed} commands with help")
