@@ -6,7 +6,7 @@ if TYPE_CHECKING:
 
 import asyncio
 from prompt_toolkit.key_binding import KeyBindings
-from src.commands.commands import handle_command
+from src.core.dispatcher import handle_command
 
 def build_keybindings(app: CLIApp):
     kb = KeyBindings()

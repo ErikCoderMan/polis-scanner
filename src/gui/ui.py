@@ -10,7 +10,7 @@ from datetime import datetime
 from src.ui.log_buffer import log_buffer
 from src.core.config import settings
 from src.core.logger import get_logger
-from src.commands.commands import handle_command
+from src.core.dispatcher import handle_command
 from src.utils.history import CommandHistory
 
 logger = get_logger(__name__)

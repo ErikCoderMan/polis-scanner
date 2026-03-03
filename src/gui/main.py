@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 def run_gui(ctx: RuntimeContext) -> int:
     logger.info("Starting GUI")
     logger.info(f"Data dir: {settings.data_dir}")
+    logger.info("For CLI interface, add argument '--cli' when running program.")
     logger.info("Type 'help' to show full help text.")
     
     # ---- asyncio, background thread ----

@@ -75,9 +75,12 @@ Execute following from project root:
 
 ### Commands
 ```
-Data:
-    refresh
-        Fetch the latest events from the API.
+Category Data:
+    find <text>
+        Quick search using strict filtering (default behavior).
+        Only events matching all words are returned.
+        Example:
+            find brand stockholm
 
     load
         Display events stored in local storage.
@@ -85,108 +88,97 @@ Data:
     more <id>
         Show full details for a specific event by its ID.
 
-    find <text>
-        Quick search using strict filtering (default behavior).
-        Only events matching all words are returned.
+    rank --group <field> [options]
+        Group events by a field and display statistics.
+        Options:
+            --group <field>
+                Field used for grouping.
+            --text <text>
+                Apply text filtering before grouping.
+            --fields <field1 field2 ...>
+                Fields used for text filtering.
+            --filters <field1 value1 ...>
+                Exact field-value filters before grouping.
+            --sort <field1 field2 ...>
+                Sort grouped results.
+                Available fields: count, avg_score, group
+                Multiple fields can be provided in priority order.
+            --limit <n>
+                Limit number of groups returned.
+            --strict <true|false>
+                true  (default)  → hard filtering only
+                false            → enable relevance scoring and ranking
+        Example:
+           rank --group location.name --filters type brand
+
+    refresh
+        Fetch the latest events from the API.
 
     search [options]
         Advanced search with filtering, sorting and limit.
+        Options:
+            --text <text>
+                Match all words in the specified fields.
+            --fields <field1 field2 ...>
+                Fields used for text matching.
+                (Default all): name, summary, type, location.name.
+            --filters <field1 value1 field2 value2 ...>
+                Exact field-value filtering.
+            --sort <field1 field2 ...>
+                Sort events by specified event fields.
+                Examples: score, datetime, name, type, location.name
+                Multiple fields can be provided in priority order.
+            --limit <n>
+                Limit the number of returned results.
+            --strict <true|false>
+                true  (default)  → hard filtering only
+                false            → enable relevance scoring and ranking
+        Example:
+           search --text polis --filters type brand location.name stockholm --limit 3
 
-    rank --group <field> [options]
-        Group events by a field and display statistics.
-
-Tasks:
-    poll [interval]
-        Repeatedly refresh events at a fixed interval.
-
-        Interval format: <int>[s|m|h|d]
-        (seconds, minutes, hours, days).
-        Examples: 30s, 5m, 1h, 2d.
-
-    tasks
-        List running background tasks.
-
+Category Tasks:
     kill <name>
         Stop a running task.
 
-Search options:
-    --text <text>
-        Match all words in the specified fields.
+    poll [interval]
+        Repeatedly refresh events at a fixed interval.
+        Interval format: <int>[s|m|h|d]
+        (seconds, minutes, hours, days).
+        Example interval values: 30s, 5m, 1h, 2d.
 
-    --fields <field1 field2 ...>
-        Fields used for text matching.
-        (Default all): name, summary, type, location.name.
+    tasks
+        List running background tasks.  
 
-    --filters <field1 value1 field2 value2 ...>
-        Exact field-value filtering.
-
-    --sort <field1 field2 ...>
-        Sort events by specified event fields.
-        Examples:
-            score
-            datetime
-            name
-            type
-            location.name
-
-        Multiple fields can be provided in priority order.
-
-    --limit <n>
-        Limit the number of returned results.
-
-    --strict <true|false>
-        true  (default)  → hard filtering only
-        false            → enable relevance scoring and ranking
-
-Rank options:
-    --group <field>
-        Field used for grouping.
-
-    --text <text>
-        Apply text filtering before grouping.
-
-    --fields <field1 field2 ...>
-        Fields used for text filtering.
-
-    --filters <field1 value1 ...>
-        Exact field-value filters before grouping.
-
-    --sort <field1 field2 ...>
-        Sort grouped results.
-        Available fields:
-            count
-            avg_score
-            group
-
-        Multiple fields can be provided in priority order.
-
-    --limit <n>
-        Limit number of groups returned.
-    
-    --strict <true|false>
-        true  (default)  → hard filtering only
-        false            → enable relevance scoring and ranking
-        
-Other:
-    help
-        Display this help message.
-
+Category Other:
     clear
         Clear the output screen.
 
     exit / quit [now]
         Quit the program.
-        
         Options:
-            now            → Do not wait for background tasks, quit imediately
-            (no arguments) → Program will make a clean exit, properly wait and close tasks
-            
+            now            → Do not wait for background tasks, quit immediately
+            (no arguments) → Program will make a clean exit and properly close tasks
+
+    help [prefix1 prefix2 prefix3 ...]
+        Display help for all commands or a filtered subset.
+        If one or more command prefixes are provided, only commands
+        starting with those prefixes are shown.
+        If no arguments are given, all commands are listed.
+        Examples:
+            help po tas find    → shows: poll, tasks, find
+            help refresh        → shows: refresh
+            help                → shows all commands
+
 ```
 #### Examples
-
+   `refresh`  
+   `more 123456`  
    `search --text polis --filters type brand location.name stockholm --limit 3`  
    `find brand stockholm`  
    `rank --group location.name --filters type brand`  
+   `poll 5m`  
+   `tasks`  
+   `kill poll`  
 
 ### UI Controls
 

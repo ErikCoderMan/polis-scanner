@@ -16,6 +16,14 @@ class LogBuffer:
                     
                 else:
                     self.lines.append(line)
+    
+    def newline(self):
+        with self.lock:
+            if not self.interactive_mode:
+                print("", flush=True)
+            
+            else:
+                self.lines.append("")
 
     def get_text(self) -> str:
         with self.lock:
