@@ -30,7 +30,7 @@ async def main_async(args):
     # -----------------------------
     if args.command:
         ctx.interactive = False
-        from src.commands.commands import handle_command
+        from src.core.dispatcher import handle_command
         from src.ui.log_buffer import log_buffer
         
         log_buffer.interactive_mode = False
