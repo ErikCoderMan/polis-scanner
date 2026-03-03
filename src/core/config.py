@@ -29,6 +29,7 @@ class Settings:
     data_dir: Path
     logs_dir: Path
     cache_dir: Path
+    polis_base_url: str
     polis_event_url: str
     poll_interval: str # f.e: "100s", "45m", "1h", "3d" 
     poll_interval_lowest_allowed_s: int
@@ -70,6 +71,7 @@ def load_settings() -> Settings:
         data_dir=data_dir,
         logs_dir=logs_dir,
         cache_dir=cache_dir,
+        polis_base_url = os.environ.get("POLIS_SCANNER_POLIS_BASE_URL", "https://polisen.se"),
         polis_event_url = os.environ.get("POLIS_SCANNER_POLIS_EVENT_URL", "https://polisen.se/api/events"),
         poll_interval = os.environ.get("POLIS_SCANNER_POLL_INTERVAL", "5m"),
         poll_interval_lowest_allowed_s = os.environ.get("POLIS_SCANNER_POLL_INTERVALL_LOWEST_ALLOWED_S", 10),
