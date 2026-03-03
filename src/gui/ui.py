@@ -70,10 +70,9 @@ class GUIApp:
         if self.compact_mode:
             self.detail.grid_remove()
             self.footer.grid_remove()
-            self.footer_label.grid_remove()
         else:
             self.detail.grid()
-            self.footer_label.grid()
+            self.footer.grid()
     
     def clicked_recently(self):
         now = time.perf_counter()
