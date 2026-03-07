@@ -18,6 +18,10 @@ class RuntimeContext:
     ui: object | None = None
     scheduler: Scheduler = field(default_factory=Scheduler)
     state: dict = field(default_factory=dict)
+    
+    def __post_init__(self):
+        if self.state is None:
+            self.state = {}
 
     def is_gui(self) -> bool:
         return (self.mode or "").lower() == "gui"
