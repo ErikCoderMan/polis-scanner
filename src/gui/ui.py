@@ -28,6 +28,13 @@ class GUIApp:
         ctx.ui = self
         self.ctx = ctx
         
+        # store screen size dynamically in new state
+        if "windows_width" not in self.ctx.state:
+            self.ctx.state["window_width"] = 1200
+        
+        if "window_height" not in self.ctx.state:
+            self.ctx.state["window_height"] = 800
+        
         # ---- loops ----
         
         # tkinter loop (main thread)
@@ -78,8 +85,13 @@ class GUIApp:
             
         else:
             self.theme.apply("default")
-        
-        
+         
+         
+        # --------------------------------------
+        # Bind screen resize event once in init
+        # --------------------------------------
+        self.root.bind("<Configure>", self.on_window_resize)
+            
         
         # ---- loop ----
         
@@ -88,6 +100,9 @@ class GUIApp:
         
         # start loop
         self.schedule_update()
+        
+        
+        
     
     def clicked_recently(self):
         now = time.perf_counter()
@@ -107,14 +122,66 @@ class GUIApp:
     # ----------------------------
     # Layout
     # ----------------------------
+    
+    def on_window_resize(self, event):
+        if event.widget is not self.root:
+            return
+        
+        self.ctx.state["window_width"] = event.width
+        self.ctx.state["window_height"] = event.height
+        
+    
+        
+    def reload_ui(self):
+        for child in self.root.winfo_children():
+            child.destroy()
+        
+        self.theme.clear_registries()
+        self.build_layout()
+        self.theme.apply(self.theme.current_theme)
+    
 
+    def rebuild(self):
+        self.root.after(0, self.reload_ui)
+        
+        
+        # ---- on theme selection ----
+    
+    def on_select_theme(self, theme_name):
+        theme_name = theme_name.lower()
+
+        self.theme.current_theme = theme_name
+        update_env_variable(
+            "POLIS_SCANNER_DEFAULT_THEME",
+            theme_name
+        )
+
+        # Rebuild UI structure if needed
+        self.rebuild()
+
+        # Then apply visual theme after rebuild
+        self.theme.apply(theme_name=theme_name)
+        
+    
+    
+    def save_window_position(self):
+        self.ctx.state["window_x"] = self.root.winfo_x()
+        self.ctx.state["window_y"] = self.root.winfo_y()
+        self.ctx.state["window_geometry"] = self.root.geometry()
+    
     def build_layout(self):
-        self.root.geometry("1200x800")
+        self.root.geometry(f"{self.ctx.state['window_width']}x{self.ctx.state['window_height']}")
+        self.root.after(50, self.save_window_position)
 
         # ---- Root ----
         
         self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(1, weight=0)
         self.root.grid_rowconfigure(2, weight=1)
+        self.root.grid_rowconfigure(3, weight=0)
+        self.root.grid_rowconfigure(4, weight=0)
+        self.root.grid_rowconfigure(5, weight=0)
+        self.root.grid_rowconfigure(6, weight=0)
 
         # ---- Title bar ----
         
@@ -143,7 +210,6 @@ class GUIApp:
         # Menu
         self.theme_menu = tk.Menu(self.theme_menu_button, tearoff=0)
         
-        self.theme.menus.append(self.theme_menu)
         theme_names = [*self.theme.themes.keys()]
         
         for theme in theme_names:
@@ -206,8 +272,8 @@ class GUIApp:
         # ---- Command Toolbar ----
         
         self.command_toolbar = ttk.Frame(self.root)
-        self.command_toolbar.grid(row=4, column=0, sticky="ew")
-        self.root.geometry("1200x800")
+        self.command_toolbar.grid(row=4, column=0, sticky="sew")
+        self.command_toolbar.grid_rowconfigure(4, weight=0)
 
         col = 0
         
@@ -237,8 +303,9 @@ class GUIApp:
         col += 1
         
         # Combobox widget for kill button
-        self.kill_input = ttk.Combobox(self.command_toolbar, width=10)
+        self.kill_input = ttk.Combobox(self.command_toolbar, width=12)
         self.kill_input.grid(row=0, column=col, pady=2, padx=2)
+        
         col += 1
         
         
@@ -268,7 +335,7 @@ class GUIApp:
         col += 1
         
         # Input entry widget for poll button
-        self.poll_input = ttk.Entry(self.command_toolbar, width=6)
+        self.poll_input = ttk.Entry(self.command_toolbar, width=8)
         self.poll_input.grid(row=0, column=col, padx=2)
 
         self.poll_input.config(state="normal")
@@ -314,10 +381,11 @@ class GUIApp:
             ).grid(row=0, column=col, padx=2)
             col += 1
         
-        # ---- Detail widget ----
         
+        # ---- Detail widget ----
+
         detail_frame = ttk.Frame(self.root)
-        detail_frame.grid(row=5, column=0, sticky="ew")
+        detail_frame.grid(row=5, column=0, sticky="nsew")
 
         self.detail = tk.Text(
             detail_frame,
@@ -325,9 +393,12 @@ class GUIApp:
             height=9
         )
 
-        self.detail.pack(fill="x")
+        self.detail.grid(row=0, column=0, sticky="nsew")
         self.detail.config(state="disabled")
-        
+
+        detail_frame.grid_rowconfigure(0, weight=1)
+        detail_frame.grid_columnconfigure(0, weight=1)
+
         self.detail.bind("<Button-1>", self.on_detail_click)
         self.detail.bind("<Motion>", self.on_detail_hover)
         self.detail.bind("<Leave>", self.on_detail_leave)
@@ -341,6 +412,33 @@ class GUIApp:
         )
         
         self.footer_label.grid(row=0, column=0, sticky="ew")
+        
+        
+        # Register widgets for theme
+        self.theme.menus.append(self.theme_menu)
+        
+        # ---- append widgets to to theme widget registry ----
+        
+        self.theme.comboboxes.append(self.kill_input)
+        
+        if hasattr(self, "output"):
+            self.theme.text_widgets.append(self.output)
+
+        if hasattr(self, "detail"):
+            self.theme.text_widgets.append(self.detail)
+
+        if hasattr(self, "footer_label"):
+            self.theme.footer_widgets.append(self.footer_label)
+            
+            
+            
+        # Store grid settings for later use
+        # it makes restoring from compact mode possible
+        # only storing the ones we toggle on and off
+        self.detail_grid_info = self.detail.grid_info()
+        self.detail_frame = detail_frame
+        self.footer_frame = self.footer
+        self.footer_grid_info = self.footer.grid_info()
         
         
     def hover_text(self, widget: tk.Text, event, tag_name="hover"):
@@ -455,18 +553,46 @@ class GUIApp:
         flash_id = self.root.after(duration, restore)
         setattr(self, timer_attr, flash_id)
         
+        
+        
     def is_widget_flashing(self, widget):
         timer_attr = f"_flash_id_{id(widget)}"
         return getattr(self, timer_attr, None) is not None
     
+    
+    
     def toggle_compact_mode(self):
-        self.compact_mode = True if not self.compact_mode else False
+        self.compact_mode = not self.compact_mode
+
         if self.compact_mode:
-            self.detail.grid_remove()
-            self.footer.grid_remove()
+
+            # --- Save layout state ---
+            if hasattr(self, "detail_frame"):
+                self.detail_frame_grid_info = self.detail_frame.grid_info()
+
+            if hasattr(self, "footer"):
+                self.footer_grid_info = self.footer.grid_info()
+
+            # --- Remove widgets ---
+            if hasattr(self, "detail_frame"):
+                self.detail_frame.grid_remove()
+
+            if hasattr(self, "footer"):
+                self.footer.grid_remove()
+
         else:
-            self.detail.grid()
-            self.footer.grid()
+
+            # --- Restore widgets ---
+            if hasattr(self, "detail_frame") and hasattr(self, "detail_frame_grid_info"):
+                self.detail_frame.grid(**self.detail_frame_grid_info)
+
+            if hasattr(self, "footer") and hasattr(self, "footer_grid_info"):
+                self.footer.grid(**self.footer_grid_info)
+
+        # --- Let Tkinter settle layout before repaint ---
+        self.root.after_idle(lambda: self.root.update_idletasks())
+        
+        
     
     def extract_event_id(self, line: str):
         # todo: should upgrade this to instead
@@ -492,12 +618,6 @@ class GUIApp:
     # (on) Widget Actions
     # ----------------------------
     
-    # ---- theme menu selection area ----
-    
-    def on_select_theme(self, theme_name):
-        theme_name = theme_name.lower()
-        self.theme.apply(theme_name=theme_name)
-        update_env_variable("POLIS_SCANNER_DEFAULT_THEME", theme_name)
     
     # ---- output widget area ----
     
