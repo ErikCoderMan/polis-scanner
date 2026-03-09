@@ -3,23 +3,6 @@ from tkinter import ttk
 from src.utils.tools import str_to_hex, generate_highlight_colors
 
 
-# ----------------------------------------
-# Example usage when used by src/gui/ui.py:
-# ----------------------------------------
-# 1. self.theme = ThemeManager(self)
-# 2. self.build_layout()
-# 3. self.theme.store_defaults()
-# ----------------------------------------
-# We have to create the object, then build layout
-# and after that use store_defaults metod to store
-# the default system color settings.
-# ---------------------------------------- 
-# These steps have to be sepparated because
-# class A needs data from class B
-# but class B also needs data from class A
-# ---------------------------------------- 
-
-
 class ThemeManager:
     def __init__(self, app):
         self.app = app
@@ -69,6 +52,8 @@ class ThemeManager:
         self.footer_widgets.clear()
         self.comboboxes.clear()
         self.listboxes.clear()
+        
+        self.root.option_clear()
 
     # -------------------------------------------------
     # Runtime snapshot (called manually after layout build)
@@ -142,13 +127,6 @@ class ThemeManager:
         if theme_name not in self.themes:
             raise ValueError(f"Unknown theme: {theme_name}")
 
-        # Save window position BEFORE theme change
-        try:
-            self.app.ctx.state["window_x"] = self.root.winfo_x()
-            self.app.ctx.state["window_y"] = self.root.winfo_y()
-        except Exception:
-            pass
-
         self.current_theme = theme_name
 
         if theme_name == "default":
@@ -156,6 +134,7 @@ class ThemeManager:
         else:
             self.style.theme_use("clam")
 
+        self.root.option_clear()
 
         self.themes[theme_name]()
 
@@ -163,20 +142,6 @@ class ThemeManager:
         self._apply_combobox_palette()
         self._apply_listbox_palette()
         self._apply_menu_palette()
-
-        # Restore position AFTER theme apply
-        def restore_pos():
-            try:
-                x = self.app.ctx.state.get("window_x")
-                y = self.app.ctx.state.get("window_y")
-
-                if x is not None and y is not None:
-                    self.root.geometry(f"+{x}+{y}")
-
-            except Exception:
-                pass
-
-        self.root.after(10, restore_pos)
 
         self.root.update_idletasks()
 

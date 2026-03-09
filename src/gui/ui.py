@@ -29,7 +29,7 @@ class GUIApp:
         self.ctx = ctx
         
         # store screen size dynamically in new state
-        if "windows_width" not in self.ctx.state:
+        if "window_width" not in self.ctx.state:
             self.ctx.state["window_width"] = 1200
         
         if "window_height" not in self.ctx.state:
@@ -73,6 +73,13 @@ class GUIApp:
         # build widgets
         self.build_layout()
         
+        # Save window position info
+        # root.geometry() returns x: 0 and y: 0 initially untill window
+        # has been moved, so we bump the window to force values.
+        self.root.update_idletasks()
+        self.root.geometry(f"+{self.root.winfo_x()+1}+{self.root.winfo_y()+1}")
+        self.save_window_position()
+        
         # Store default theme
         self.theme.store_defaults()
         
@@ -87,11 +94,9 @@ class GUIApp:
             self.theme.apply("default")
          
          
-        # --------------------------------------
-        # Bind screen resize event once in init
-        # --------------------------------------
-        self.root.bind("<Configure>", self.on_window_resize)
-            
+        # On screen window configure, resize etc
+        self.root.bind("<Configure>", self.on_window_configure)
+        
         
         # ---- loop ----
         
@@ -102,8 +107,6 @@ class GUIApp:
         self.schedule_update()
         
         
-        
-    
     def clicked_recently(self):
         now = time.perf_counter()
 
@@ -118,19 +121,12 @@ class GUIApp:
 
     async def shutdown(self):
         self.root.after(0, self.root.quit)
-
-    # ----------------------------
-    # Layout
-    # ----------------------------
-    
-    def on_window_resize(self, event):
-        if event.widget is not self.root:
-            return
         
-        self.ctx.state["window_width"] = event.width
-        self.ctx.state["window_height"] = event.height
         
-    
+    def on_window_configure(self, event):
+        if event.widget is self.root:
+            self.save_window_position()
+            
         
     def reload_ui(self):
         for child in self.root.winfo_children():
@@ -142,8 +138,14 @@ class GUIApp:
     
 
     def rebuild(self):
-        self.root.after(0, self.reload_ui)
+        self.save_window_position()
+        self.reload_ui()
+        geom = self.ctx.state["window_geometry"]
         
+        def restore_window_pos():
+            self.root.geometry(geom)
+            
+        self.root.after_idle(restore_window_pos)
         
         # ---- on theme selection ----
     
@@ -156,22 +158,32 @@ class GUIApp:
             theme_name
         )
 
-        # Rebuild UI structure if needed
+        # Rebuild UI structure
         self.rebuild()
 
         # Then apply visual theme after rebuild
         self.theme.apply(theme_name=theme_name)
         
+        # Inform that theme has been changed
+        # this also forces output window to not be empty after rebuild
+        # since we print to output widget when log buffer is changed
+        logger.info(f"Theme changed to '{self.theme.current_theme}'")
     
     
     def save_window_position(self):
-        self.ctx.state["window_x"] = self.root.winfo_x()
-        self.ctx.state["window_y"] = self.root.winfo_y()
+        self.root.update_idletasks()
+        self.ctx.state["window_pos_x"] = self.root.winfo_x()
+        self.ctx.state["window_pos_y"] = self.root.winfo_y()
+        self.ctx.state["window_width"] = self.root.winfo_width()
+        self.ctx.state["window_height"] = self.root.winfo_height()
         self.ctx.state["window_geometry"] = self.root.geometry()
+    
+    # ----------------------------
+    # Layout
+    # ----------------------------
     
     def build_layout(self):
         self.root.geometry(f"{self.ctx.state['window_width']}x{self.ctx.state['window_height']}")
-        self.root.after(50, self.save_window_position)
 
         # ---- Root ----
         
@@ -417,6 +429,7 @@ class GUIApp:
         # Register widgets for theme
         self.theme.menus.append(self.theme_menu)
         
+        
         # ---- append widgets to to theme widget registry ----
         
         self.theme.comboboxes.append(self.kill_input)
@@ -433,12 +446,11 @@ class GUIApp:
             
             
         # Store grid settings for later use
-        # it makes restoring from compact mode possible
-        # only storing the ones we toggle on and off
         self.detail_grid_info = self.detail.grid_info()
         self.detail_frame = detail_frame
         self.footer_frame = self.footer
         self.footer_grid_info = self.footer.grid_info()
+        
         
         
     def hover_text(self, widget: tk.Text, event, tag_name="hover"):
