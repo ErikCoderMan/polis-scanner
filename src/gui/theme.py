@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+import tkinter.font as tkfont
 from src.utils.tools import str_to_hex, generate_highlight_colors
 
 
@@ -14,7 +15,8 @@ class ThemeManager:
         
         self.menus: list[tk.Menu] = []
         self.text_widgets: list[tk.Text] = []
-        self.footer_widgets: list[ttk.Label] = []
+        self.inputs: list[ttk.Entry] = []
+        self.footer_widgets: list[ttk.Label | ttk.Text] = []
         self.comboboxes: list[ttk.Combobox] = []
         self.listboxes: list[tk.Listbox] = []
 
@@ -49,6 +51,7 @@ class ThemeManager:
     def clear_registries(self):
         self.menus.clear()
         self.text_widgets.clear()
+        self.inputs.clear()
         self.footer_widgets.clear()
         self.comboboxes.clear()
         self.listboxes.clear()
@@ -61,9 +64,17 @@ class ThemeManager:
     def store_defaults(self):
         """
         Capture runtime palette snapshot after layout construction.
+        All fonts are stored as tkfont.Font objects for direct use in configure().
+        Colors are extracted from style when relevant to handle ttk widgets properly.
         """
+        style = ttk.Style()
 
+        # ----------------------------
+        # Text widgets
+        # ----------------------------
         def snapshot_text(widget: tk.Text):
+            font_obj = tkfont.Font(font=widget.cget("font"))
+
             self.palette["default"]["text"] = {
                 "background": widget.cget("background"),
                 "foreground": widget.cget("foreground"),
@@ -73,50 +84,88 @@ class ThemeManager:
                 "highlightbackground": widget.cget("highlightbackground"),
                 "highlightcolor": widget.cget("highlightcolor"),
                 "highlightthickness": widget.cget("highlightthickness"),
+                "font": font_obj
             }
 
-            bg = widget.cget("background")
-            fg = widget.cget("foreground")
-
-            h_bg, h_fg = generate_highlight_colors(bg=bg, fg=fg)
-
+            # Optional hover highlight colors
+            h_bg, h_fg = generate_highlight_colors(
+                bg=widget.cget("background"),
+                fg=widget.cget("foreground")
+            )
             self.hover_text["default"]["bg"] = h_bg
             self.hover_text["default"]["fg"] = h_fg
 
-        def snapshot_menus(self):
+        # ----------------------------
+        # Entry / Input widgets (ttk)
+        # ----------------------------
+        def snapshot_entry(widget):
+            cls = widget.winfo_class()
+            font_obj = tkfont.Font(font=widget.cget("font"))
+
+            field_bg = style.lookup(cls, "fieldbackground") or widget.cget("background")
+            fg = style.lookup(cls, "foreground") or widget.cget("foreground")
+            insert_fg = fg
+
+            self.palette["default"]["entry"] = {
+                "fieldbackground": field_bg,
+                "foreground": fg,
+                "insertcolor": insert_fg,
+                "borderwidth": widget.cget("borderwidth") if "borderwidth" in widget.configure() else 1,
+                "font": font_obj
+            }
+
+        # ----------------------------
+        # Footer text (tk.Text)
+        # ----------------------------
+        def snapshot_footer(widget: tk.Text):
+            font_obj = tkfont.Font(font=widget.cget("font"))
+            bold_font = font_obj.copy()
+            bold_font.configure(weight="bold")
+
+            self.palette["default"]["footer"] = {
+                "background": "black",
+                "foreground": widget.cget("foreground"),
+                "font": font_obj,
+                "bold_font": bold_font
+            }
+
+        # ----------------------------
+        # Menus
+        # ----------------------------
+        def snapshot_menus():
             palette = {}
-
             for menu_widget in self.menus:
-                palette.update({
-                    k: menu_widget.cget(k)
-                    for k in menu_widget.configure().keys()
-                    if menu_widget.cget(k) is not None
-                })
-
+                cfg = {}
+                for k in menu_widget.configure().keys():
+                    try:
+                        val = menu_widget.cget(k)
+                        if val is not None:
+                            cfg[k] = val
+                    except tk.TclError:
+                        continue
+                if cfg:
+                    palette.update(cfg)
             if palette:
                 self.palette["default"]["menu"] = palette
 
-        def snapshot_footer(widget):
-            if not widget:
-                return
+        # ----------------------------
+        # Capture widgets if they exist
+        # ----------------------------
+        output_widget = getattr(self.app, "output", None)
+        if isinstance(output_widget, tk.Text):
+            snapshot_text(output_widget)
 
-            style_name = widget.cget("style") or "Footer.TLabel"
+        input_widget = getattr(self.app, "input", None)
+        if isinstance(input_widget, (ttk.Entry, tk.Entry)):
+            snapshot_entry(input_widget)
 
-            bg = self.style.lookup(style_name, "background") or widget.cget("background")
-            fg = self.style.lookup(style_name, "foreground") or widget.cget("foreground")
+        if self.menus:
+            snapshot_menus()
 
-            self.palette["default"]["footer"] = {
-                "background": bg,
-                "foreground": fg,
-            }
-
-        # --- Capture runtime widgets ---
-        if isinstance(getattr(self.app, "output", None), tk.Text):
-            snapshot_text(self.app.output)
-
-        snapshot_menus(self)
-        snapshot_footer(getattr(self.app, "footer_label", None))
-
+        footer_widget = getattr(self.app, "footer_label", None)
+        if isinstance(footer_widget, tk.Text):
+            snapshot_footer(footer_widget)
+        
 
     # -------------------------------------------------
 
@@ -135,178 +184,148 @@ class ThemeManager:
             self.style.theme_use("clam")
 
         self.root.option_clear()
-
         self.themes[theme_name]()
-
         self.propagate_theme()
-        self._apply_combobox_palette()
-        self._apply_listbox_palette()
-        self._apply_menu_palette()
-
+        
         self.root.update_idletasks()
 
     # -------------------------------------------------
 
     def propagate_theme(self):
         """
-        Explicit registry-based theme propagation.
+        Apply the current theme palette to all registered widgets and styles.
         """
-        theme_palette = self.palette[self.current_theme]
-        
+        theme_palette = self.palette.get(self.current_theme)
         if not theme_palette:
             return
 
-        # --- Text widgets ---
-        for attr_name in ["output", "detail"]:
-            widget = getattr(self.app, attr_name, None)
+        # =====================================================
+        # General widget styles (TFrame, TLabel, TButton, TMenubutton, TScrollbar)
+        # =====================================================
+        p = self.palette.get(self.current_theme, {})
 
-            if isinstance(widget, tk.Text):
-                palette = theme_palette.get("text")
+        for widget_name, ttk_name in [
+            ("frame", "TFrame"),
+            ("label", "TLabel"),
+            ("button", "TButton"),
+            ("menubutton", "TMenubutton"),
+            ("entry", "TEntry"),
+            ("scrollbar", "TScrollbar"),
+            ("divider", "ToolbarDivider.TFrame"),
+            ("footer", "Footer.TLabel")
+        ]:
+            cfg = p.get(widget_name, {})
+            style = cfg.get("style")
+            state_map = cfg.get("map")
 
-                if palette:
-                    valid_keys = widget.configure().keys()
+            if style:
+                self._set_style(ttk_name, **style)
+            if state_map:
+                self._set_map(ttk_name, **state_map)
 
-                    apply_dict = {
-                        k: v for k, v in palette.items()
-                        if k in valid_keys and v is not None
-                    }
-
-                    if apply_dict:
-                        widget.configure(**apply_dict)
-
-
-        # --- Footer ---
-        if hasattr(self.app, "footer_label"):
-            footer_palette = theme_palette.get("footer")
-
-            if footer_palette:
-                self._set_style(
-                    "Footer.TLabel",
-                    background=footer_palette["background"],
-                    foreground=footer_palette["foreground"],
-                    anchor="w"
-                )
-
-
-    # -------------------------------------------------
-    
-    def _apply_menu_palette(self):
-        """
-        Apply palette only to explicitly registered menus.
-        """
-        menu_palette = self.palette[self.current_theme].get("menu")
-        
-        if not menu_palette:
-            return
-
-        for menu in self.menus:
-            try:
-                valid_keys = menu.configure().keys()
-
-                apply_dict = {
-                    k: v for k, v in menu_palette.items()
-                    if k in valid_keys and v is not None
-                }
-
-                if apply_dict:
-                    menu.configure(**apply_dict)
-
-            except Exception:
-                continue
-    
-    
-    def _apply_combobox_palette(self):
-        palette = self.palette[self.current_theme].get("combobox", {})
-        
-        if not palette:
-            return
-        self._set_style(
-            "TCombobox",
-            fieldbackground=palette.get("fieldbackground"),
-            background=palette.get("background"),
-            foreground=palette.get("foreground"),
-            arrowcolor=palette.get("arrowcolor"),
-            insertcolor=palette.get("foreground"),
-            bordercolor=palette.get("background"),
-            borderwidth=palette.get("borderwidth"),
-            lightcolor=palette.get("lightcolor"),
-            darkcolor=palette.get("darkcolor"),
-            relief=palette.get("relief")
-        )
-
-        self.style.map(
-            "TCombobox",
-            bordercolor=[("focus", palette["bordercolor_focus"])],
-            background=[("active", palette["background_active"])],
-            lightcolor=[("focus", palette["lightcolor_focus"])],
-            darkcolor=[("focus", palette["darkcolor_focus"])]
-        )
-
-        palette = self.palette[self.current_theme].get("combobox", {}).get("listbox", {})
-        
-        if not palette:
-            return
-        
-        self.root.option_add("*TCombobox*Listbox.background",
-            palette["background"])
-            
-        self.root.option_add("*TCombobox*Listbox.foreground",
-            palette["foreground"])
-            
-        self.root.option_add("*TCombobox*Listbox.selectBackground",
-            palette["selectbackground"])
-            
-        self.root.option_add("*TCombobox*Listbox.selectForeground",
-            palette["selectforeground"])
-            
-        self.root.option_add("*TCombobox*Listbox.highlightThickness", 1)
-        self.root.option_add("*TCombobox*Listbox.borderWidth", 1)
-        
-        
-        for combo in self.comboboxes:
-            try:
-                if not combo.winfo_exists():
-                    continue
-                    
-                combo.tk.call("ttk::combobox::PopdownWindow", combo)
-                combo.event_generate("<Button-1>")
-                combo.event_generate("<Alt-Down>")
-                
-            except tk.TclError:
-                continue
-            
-            finally:
-                combo.update_idletasks()
-                combo.event_generate("<Escape>")
-
-        
-    
-    def _apply_listbox_palette(self):
-        palette = self.palette[self.current_theme].get("listbox", {})
-        
-        if not palette:
-            palette = self.palette[self.current_theme].get("combobox", {})
-            
+        # =====================================================
+        # Text widgets
+        # =====================================================
+        for widget in self.text_widgets:
+            palette = theme_palette.get("text", {})
             if palette:
-                palette = palette.get("listbox")
-        
-        if not palette:
-            return
+                valid_keys = widget.configure().keys()
+                apply_dict = {k: v for k, v in palette.items() if k in valid_keys and v is not None}
+                if apply_dict:
+                    widget.configure(**apply_dict)
 
+        # =====================================================
+        # Entry widgets
+        # =====================================================
+        for entry in getattr(self, "inputs", []):
+            if not entry.winfo_exists():
+                continue
+
+            palette = theme_palette.get("entry", {})
+            style_cfg = palette.get("style", {})
+            style_map = palette.get("map", {})
+
+            # Applicera via ttk.Style istället för entry.configure()
+            if style_cfg:
+                self._set_style("TEntry", **style_cfg)
+            if style_map:
+                self._set_map("TEntry", **style_map)
+
+        # =====================================================
+        # Footer
+        # =====================================================
+        footer = theme_palette.get("footer")
+
+        if footer and hasattr(self.app, "footer_label"):
+            style = footer.get("style", {})
+
+            self.app.footer_label.configure(
+                background=style.get("background"),
+                foreground=style.get("foreground"),
+                font=style.get("font")
+            )
+
+            if "bold_font" in style:
+                self.app.footer_label.tag_config("bold", font=style["bold_font"])
+
+        # =====================================================
+        # Comboboxes
+        # =====================================================
+        combo_palette = theme_palette.get("combobox", {})
+        for combo in self.comboboxes:
+            if not combo.winfo_exists():
+                continue
+            if combo_palette:
+                self._set_style(
+                    "TCombobox",
+                    fieldbackground=combo_palette.get("fieldbackground"),
+                    background=combo_palette.get("background"),
+                    foreground=combo_palette.get("foreground"),
+                    arrowcolor=combo_palette.get("arrowcolor"),
+                    insertcolor=combo_palette.get("insertcolor"),
+                    bordercolor=combo_palette.get("bordercolor"),
+                    borderwidth=combo_palette.get("borderwidth"),
+                    lightcolor=combo_palette.get("lightcolor"),
+                    darkcolor=combo_palette.get("darkcolor"),
+                    relief=combo_palette.get("relief")
+                )
+                # Listbox inside combobox
+                listbox = combo_palette.get("listbox", {})
+                if listbox:
+                    self.root.option_add("*TCombobox*Listbox.background", listbox.get("background"))
+                    self.root.option_add("*TCombobox*Listbox.foreground", listbox.get("foreground"))
+                    self.root.option_add("*TCombobox*Listbox.selectBackground", listbox.get("selectbackground"))
+                    self.root.option_add("*TCombobox*Listbox.selectForeground", listbox.get("selectforeground"))
+        
+        # =====================================================
+        # Listboxes
+        # =====================================================
+        listbox_palette = theme_palette.get("listbox", {})
         for lb in self.listboxes:
             if not lb.winfo_exists():
                 continue
-            
-            try:
+            if listbox_palette:
                 lb.configure(
-                    bg=palette["background"],
-                    fg=palette["foreground"],
-                    selectbackground=palette["selectbackground"],
-                    selectforeground=palette["selectforeground"]
+                    bg=listbox_palette.get("background"),
+                    fg=listbox_palette.get("foreground"),
+                    selectbackground=listbox_palette.get("selectbackground"),
+                    selectforeground=listbox_palette.get("selectforeground")
                 )
-                
-            except tk.TclError:
+
+        # =====================================================
+        # Menus
+        # =====================================================
+        menu_palette = theme_palette.get("menu", {})
+        for menu in self.menus:
+            if not menu.winfo_exists():
                 continue
+            if menu_palette:
+                valid_keys = menu.configure().keys()
+                apply_dict = {k: v for k, v in menu_palette.items() if k in valid_keys and v is not None}
+                if apply_dict:
+                    menu.configure(**apply_dict)
+ 
+    
     
     # -------------------------------------------------
     
@@ -340,10 +359,12 @@ class ThemeManager:
     # -------------------------------------------------
 
     def _define_dark(self):
+        """
+        Define dark theme palette only. Do not modify widgets directly.
+        """
         # =====================================================
-        # Palette base
+        # Base colors
         # =====================================================
-
         bg_main = "#252525"
         bg_surface = "#353535"
         bg_input = "#151515"
@@ -367,20 +388,19 @@ class ThemeManager:
         light_color = "#505050"
         dark_color = "#060606"
 
-        sepparator_color = "#454545"
-
+        separator_color = "#454545"
         menu_active_fg = "#efefef"
-
         select_bg = "#454545"
 
         # Hover text snapshot
-        self.hover_text["dark"]["bg"] = "#252525"
-        self.hover_text["dark"]["fg"] = "#ffffff"
-            
+        self.hover_text["dark"]["bg"] = bg_main
+        self.hover_text["dark"]["fg"] = fg_main
 
         # =====================================================
-        # Text palette
+        # Text widget
         # =====================================================
+        default_font_size = tkfont.Font(font=self.palette["default"]["text"].get("font")).cget("size")
+        font_text_obj = tkfont.Font(family="TkFixedFont", size=10, weight="normal", slant="roman")
 
         self.palette["dark"]["text"] = {
             "background": bg_output,
@@ -390,30 +410,40 @@ class ThemeManager:
             "selectforeground": fg_main,
             "highlightthickness": outline_thickness,
             "highlightbackground": outline_inactive,
-            "highlightcolor": outline_active
-        }
-        
-        # =====================================================
-        # Input palette
-        # =====================================================
-        
-        self.palette["dark"]["input"] = {
-            "fieldbackground": bg_input,
-            "foreground": fg_main,
-            "insertcolor": fg_main,
-            "bordercolor": input_border_color,
-            "lightcolor": input_border_color,
-            "darkcolor": input_border_color,
-            "relief": "sunken",
-            "focuscolor": input_border_color,
-            "borderwidth": outline_thickness,
-            "padding": 0
+            "highlightcolor": outline_active,
+            "font": font_text_obj
         }
 
         # =====================================================
-        # Menu palette
+        # Entry
         # =====================================================
+        font_input_obj = tkfont.Font(family="TkFixedFont", size=9, weight="normal", slant="roman")
 
+        self.palette["dark"]["entry"] = {
+            "style": {
+                "fieldbackground": bg_input,
+                "foreground": fg_main,
+                "insertcolor": fg_main,
+                "bordercolor": input_border_color,
+                "lightcolor": input_border_color,
+                "darkcolor": input_border_color,
+                "relief": "sunken",
+                "focuscolor": input_border_color,
+                "borderwidth": 1,
+                "padding": 1,
+                "font": font_input_obj
+            },
+            "map": {
+                "bordercolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ]
+            }
+        }
+
+        # =====================================================
+        # Menu
+        # =====================================================
         self.palette["dark"]["menu"] = {
             "background": bg_surface,
             "foreground": fg_main,
@@ -422,90 +452,26 @@ class ThemeManager:
         }
         
         # =====================================================
-        # Layout widgets
+        # Menubutton
         # =====================================================
-
-        self._set_style("TFrame", background=bg_main)
-
-        self._set_style(
-            "TLabel",
-            background=bg_main,
-            foreground=fg_main
-        )
-
-        self._set_style(
-            "TButton",
-            background=bg_surface,
-            foreground=fg_main,
-            borderwidth=0,
-            relief="flat",
-            lightcolor=light_color,
-            darkcolor=dark_color
-        )
-
-        self._set_map(
-            "TButton",
-            background=[("active", accent_hover)]
-        )
-
-        self._set_style(
-            "TMenubutton",
-            background=bg_surface,
-            foreground=fg_main,
-            borderwidth=0,
-            relief="flat",
-            arrowcolor=fg_secondary
-        )
-
-        self._set_map(
-            "TMenubutton",
-            background=[("active", accent_hover)]
-        )
-
-        self._set_style(
-            "ToolbarDivider.TFrame",
-            background=sepparator_color,
-            width=1
-        )
-
-        # =====================================================
-        # Entry
-        # =====================================================
-
-        self._set_style(
-            "TEntry",
-            fieldbackground=bg_input,
-            foreground=fg_main,
-            insertcolor=fg_main,
-            bordercolor=input_border_color,
-            lightcolor=input_border_color,
-            darkcolor=input_border_color,
-            relief="sunken",
-            focuscolor=input_border_color,
-            borderwidth=borderwidth,
-            padding=1
-        )
-
-        self.style.map(
-            "TEntry",
-            bordercolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ],
-            lightcolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ],
-            darkcolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ]
-        )
+        self.palette["dark"]["menubutton"] = {
+            "style": {
+                "background": bg_surface,
+                "foreground": fg_main,
+                "borderwidth": 0,
+                "relief": "flat",
+                "arrowcolor": fg_secondary
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover)
+                ]
+            }
+        }
 
         # =====================================================
         # Combobox
         # =====================================================
-        
         self.palette["dark"]["combobox"] = {
             "fieldbackground": bg_input,
             "background": bg_surface,
@@ -526,60 +492,105 @@ class ThemeManager:
                 "foreground": fg_secondary,
                 "selectbackground": input_border_color_focus,
                 "selectforeground": fg_main
-                }
             }
-            
+        }
 
+        # =====================================================
+        # Footer
+        # =====================================================
+        font_footer = tkfont.Font(family="TkCaptionFont", size=9, weight="normal", slant="roman")
+        font_footer_bold = tkfont.Font(family="TkCaptionFont", size=9, weight="bold", slant="roman")
+
+        self.palette["dark"]["footer"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_secondary,
+                "font": font_footer,
+                "bold_font": font_footer_bold,
+                "anchor": "w"
+            }
+        }
+
+        # =====================================================
+        # Frame
+        # =====================================================
+        self.palette["dark"]["frame"] = {
+            "style": {
+                "background": bg_main
+            }
+        }
+        
+        # =====================================================
+        # Button
+        # =====================================================
+        self.palette["dark"]["button"] = {
+            "style": {
+                "background": bg_surface,
+                "foreground": fg_main,
+                "borderwidth": 0,
+                "relief": "flat",
+                "lightcolor": light_color,
+                "darkcolor": dark_color
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover)
+                ]
+            }
+        }
+        
+        # =====================================================
+        # Label
+        # =====================================================
+        self.palette["dark"]["label"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_main
+            }
+        }
+        
         # =====================================================
         # Scrollbar
         # =====================================================
-
-        self._set_style(
-            "TScrollbar",
-            background=bg_surface,
-            troughcolor=bg_output,
-            arrowcolor=fg_secondary,
-            bordercolor=input_border_color,
-            lightcolor=light_color,
-            darkcolor=dark_color
-        )
-
-        self.style.map(
-            "TScrollbar",
-            background=[
-                ("active", accent_hover),
-                ("pressed", accent_active)
-            ]
-        )
-
-        # =====================================================
-        # Footer Label
-        # =====================================================
-
-        self.palette["dark"]["footer"] = {
-            "background": bg_main,
-            "foreground": fg_secondary
+        self.palette["dark"]["scrollbar"] = {
+            "style": {
+                "background": bg_surface,
+                "troughcolor": bg_output,
+                "arrowcolor": fg_secondary,
+                "bordercolor": input_border_color,
+                "lightcolor": light_color,
+                "darkcolor": dark_color
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover),
+                    ("pressed", accent_active)
+                ]
+            }
         }
+        
+        # =====================================================
+        # Toolbar divider
+        # =====================================================
+        
+        self.palette["dark"]["divider"] = {
+            "style": {
+                "background": separator_color,
+                "width": 1
+            }
+        }
+        
 
-        footer_palette = self.palette["dark"]["footer"]
 
-        if footer_palette:
-            self._set_style(
-                "Footer.TLabel",
-                background=footer_palette["background"],
-                foreground=footer_palette["foreground"],
-                anchor="w"
-            )
-
-        self.root.configure(bg=bg_main)
-
-        # -------------------------------------------------
+    # -------------------------------------------------
 
     def _define_light(self):
+        """
+        Define light theme palette only. Do not modify widgets directly.
+        """
         # =====================================================
-        # Palette base
+        # Base colors
         # =====================================================
-
         bg_main = "#d5d5d5"
         bg_surface = "#b6b6b6"
         bg_input = "#ffffff"
@@ -589,8 +600,8 @@ class ThemeManager:
         fg_secondary = "#1f1f1f"
         fg_list = "#1f1f1f"
 
-        outline_inactive = "#e0e0e0"
-        outline_active = "#a0a0a0"
+        outline_inactive = "#a0a0a0"
+        outline_active = "#606060"
         outline_thickness = 1
         borderwidth = 1
 
@@ -603,20 +614,19 @@ class ThemeManager:
         light_color = "#e8e8e8"
         dark_color = "#404040"
 
-        sepparator_color = "#808080"
-
+        separator_color = "#808080"
         menu_active_fg = "#000000"
-
         select_bg = "#a6a6a6"
 
         # Hover text snapshot
-        self.hover_text["light"]["bg"] = "#d5d5d5"
-        self.hover_text["light"]["fg"] = "#000000"
-            
+        self.hover_text["light"]["bg"] = bg_main
+        self.hover_text["light"]["fg"] = fg_main
 
         # =====================================================
-        # Text palette
+        # Text widget
         # =====================================================
+        default_font_size = tkfont.Font(font=self.palette["default"]["text"].get("font")).cget("size")
+        font_text_obj = tkfont.Font(family="TkFixedFont", size=10, weight="normal", slant="roman")
 
         self.palette["light"]["text"] = {
             "background": bg_output,
@@ -626,30 +636,40 @@ class ThemeManager:
             "selectforeground": fg_main,
             "highlightthickness": outline_thickness,
             "highlightbackground": outline_inactive,
-            "highlightcolor": outline_active
-        }
-        
-        # =====================================================
-        # Input palette
-        # =====================================================
-        
-        self.palette["light"]["input"] = {
-            "fieldbackground": bg_input,
-            "foreground": fg_main,
-            "insertcolor": fg_main,
-            "bordercolor": input_border_color,
-            "lightcolor": input_border_color,
-            "darkcolor": input_border_color,
-            "relief": "sunken",
-            "focuscolor": input_border_color,
-            "borderwidth": outline_thickness,
-            "padding": 0
+            "highlightcolor": outline_active,
+            "font": font_text_obj
         }
 
         # =====================================================
-        # Menu palette
+        # Entry
         # =====================================================
+        font_input_obj = tkfont.Font(family="TkFixedFont", size=9, weight="normal", slant="roman")
 
+        self.palette["light"]["entry"] = {
+            "style": {
+                "fieldbackground": bg_input,
+                "foreground": fg_main,
+                "insertcolor": fg_main,
+                "bordercolor": input_border_color,
+                "lightcolor": input_border_color,
+                "darkcolor": input_border_color,
+                "relief": "sunken",
+                "focuscolor": input_border_color,
+                "borderwidth": 1,
+                "padding": 1,
+                "font": font_input_obj
+            },
+            "map": {
+                "bordercolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ]
+            }
+        }
+
+        # =====================================================
+        # Menu
+        # =====================================================
         self.palette["light"]["menu"] = {
             "background": bg_surface,
             "foreground": fg_main,
@@ -658,90 +678,26 @@ class ThemeManager:
         }
         
         # =====================================================
-        # Layout widgets
+        # Menubutton
         # =====================================================
-
-        self._set_style("TFrame", background=bg_main)
-
-        self._set_style(
-            "TLabel",
-            background=bg_main,
-            foreground=fg_main
-        )
-
-        self._set_style(
-            "TButton",
-            background=bg_surface,
-            foreground=fg_main,
-            borderwidth=0,
-            relief="flat",
-            lightcolor=light_color,
-            darkcolor=dark_color
-        )
-
-        self._set_map(
-            "TButton",
-            background=[("active", accent_hover)]
-        )
-
-        self._set_style(
-            "TMenubutton",
-            background=bg_surface,
-            foreground=fg_main,
-            borderwidth=0,
-            relief="flat",
-            arrowcolor=fg_secondary
-        )
-
-        self._set_map(
-            "TMenubutton",
-            background=[("active", accent_hover)]
-        )
-
-        self._set_style(
-            "ToolbarDivider.TFrame",
-            background=sepparator_color,
-            width=1
-        )
-
-        # =====================================================
-        # Entry
-        # =====================================================
-
-        self._set_style(
-            "TEntry",
-            fieldbackground=bg_input,
-            foreground=fg_main,
-            insertcolor=fg_main,
-            bordercolor=input_border_color,
-            lightcolor=input_border_color,
-            darkcolor=input_border_color,
-            relief="sunken",
-            focuscolor=input_border_color,
-            borderwidth=borderwidth,
-            padding=1
-        )
-
-        self.style.map(
-            "TEntry",
-            bordercolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ],
-            lightcolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ],
-            darkcolor=[
-                ("focus", input_border_color_focus),
-                ("!focus", input_border_color)
-            ]
-        )
+        self.palette["light"]["menubutton"] = {
+            "style": {
+                "background": bg_surface,
+                "foreground": fg_main,
+                "borderwidth": 0,
+                "relief": "flat",
+                "arrowcolor": fg_secondary
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover)
+                ]
+            }
+        }
 
         # =====================================================
         # Combobox
         # =====================================================
-        
         self.palette["light"]["combobox"] = {
             "fieldbackground": bg_input,
             "background": bg_surface,
@@ -762,51 +718,92 @@ class ThemeManager:
                 "foreground": fg_secondary,
                 "selectbackground": input_border_color_focus,
                 "selectforeground": fg_main
-                }
             }
-            
+        }
 
+        # =====================================================
+        # Footer
+        # =====================================================
+        font_footer = tkfont.Font(family="TkCaptionFont", size=9, weight="normal", slant="roman")
+        font_footer_bold = tkfont.Font(family="TkCaptionFont", size=9, weight="bold", slant="roman")
+
+        self.palette["light"]["footer"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_secondary,
+                "font": font_footer,
+                "bold_font": font_footer_bold,
+                "anchor": "w"
+            }
+        }
+
+        # =====================================================
+        # Frame
+        # =====================================================
+        self.palette["light"]["frame"] = {
+            "style": {
+                "background": bg_main
+            }
+        }
+        
+        # =====================================================
+        # Button
+        # =====================================================
+        self.palette["light"]["button"] = {
+            "style": {
+                "background": bg_surface,
+                "foreground": fg_main,
+                "borderwidth": 0,
+                "relief": "flat",
+                "lightcolor": light_color,
+                "darkcolor": dark_color
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover)
+                ]
+            }
+        }
+        
+        # =====================================================
+        # Label
+        # =====================================================
+        self.palette["light"]["label"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_main
+            }
+        }
+        
         # =====================================================
         # Scrollbar
         # =====================================================
-
-        self._set_style(
-            "TScrollbar",
-            background=bg_surface,
-            troughcolor=bg_output,
-            arrowcolor=fg_secondary,
-            bordercolor=input_border_color,
-            lightcolor=light_color,
-            darkcolor=dark_color
-        )
-
-        self.style.map(
-            "TScrollbar",
-            background=[
-                ("active", accent_hover),
-                ("pressed", accent_active)
-            ]
-        )
-
+        self.palette["light"]["scrollbar"] = {
+            "style": {
+                "background": bg_surface,
+                "troughcolor": bg_output,
+                "arrowcolor": fg_secondary,
+                "bordercolor": input_border_color,
+                "lightcolor": light_color,
+                "darkcolor": dark_color
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover),
+                    ("pressed", accent_active)
+                ]
+            }
+        }
+        
         # =====================================================
-        # Footer Label
+        # Toolbar divider
         # =====================================================
-
-        self.palette["light"]["footer"] = {
-            "background": bg_main,
-            "foreground": fg_secondary
+        
+        self.palette["light"]["divider"] = {
+            "style": {
+                "background": separator_color,
+                "width": 1
+            }
         }
 
-        footer_palette = self.palette["light"]["footer"]
 
-        if footer_palette:
-            self._set_style(
-                "Footer.TLabel",
-                background=footer_palette["background"],
-                foreground=footer_palette["foreground"],
-                anchor="w"
-            )
-
-        self.root.configure(bg=bg_main)
-
-        # -------------------------------------------------

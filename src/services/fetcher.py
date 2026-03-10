@@ -12,11 +12,22 @@ STATE_FILE = settings.cache_dir / "last_event.json"
 DATA_FILE = settings.data_dir / "events.json"
 BASE_URL = settings.polis_base_url
 
-def get_event(event_id: int, data_file: Path = DATA_FILE) -> Dict:
-    if not event_id:
+def get_event(event_id: str|int, data_file: Path = DATA_FILE) -> Dict:
+    if event_id is None:
+        return
+    
+    if not isinstance(event_id, (str, int)):
         return
         
-    events = load_events()
+    if isinstance(event_id, str):
+        try:
+            event_id = int(event_id)
+        
+        except ValueError:
+            return
+
+        
+    events = load_events(data_file)
     
     if not events:
         return

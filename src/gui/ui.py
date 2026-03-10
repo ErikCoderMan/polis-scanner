@@ -5,9 +5,11 @@ if TYPE_CHECKING:
     from src.core.runtime import RuntimeContext
 
 import time
+import re
+import asyncio
 import tkinter as tk
 from tkinter import ttk
-import asyncio
+import tkinter.font as tkfont
 from datetime import datetime
 from src.ui.log_buffer import log_buffer
 from src.core.config import settings, update_env_variable
@@ -15,7 +17,7 @@ from src.core.logger import get_logger
 from src.core.dispatcher import handle_command
 from src.utils.history import CommandHistory
 from src.utils.tools import flatten_dict, str_to_hex, invert_color
-from src.services.fetcher import get_event
+from src.services.fetcher import get_event, load_events
 from src.gui.theme import ThemeManager
 
 logger = get_logger(__name__)
@@ -50,6 +52,7 @@ class GUIApp:
         # ---- ui variables ----
         
         self.current_event = {}
+        self.current_event_id = ""
         self.last_time_clicked = time.perf_counter()
         self.last_hover = 0
         self.compact_mode = False
@@ -73,11 +76,14 @@ class GUIApp:
         # build widgets
         self.build_layout()
         
-        # Save window position info
-        # root.geometry() returns x: 0 and y: 0 initially untill window
-        # has been moved, so we bump the window to force values.
-        self.root.update_idletasks()
-        self.root.geometry(f"+{self.root.winfo_x()+1}+{self.root.winfo_y()+1}")
+        # "bump" window because it appears that root.geometry returns
+        # that x=0 and y=0 at start untill window has been moved/resized
+        self.force_geometry_update_at_start()
+        
+        # On screen window configure, resize etc
+        self.root.bind("<Configure>", self.on_window_configure)
+        
+        # Save window geometry info
         self.save_window_position()
         
         # Store default theme
@@ -92,19 +98,18 @@ class GUIApp:
             
         else:
             self.theme.apply("default")
-         
-         
-        # On screen window configure, resize etc
-        self.root.bind("<Configure>", self.on_window_configure)
         
         
         # ---- loop ----
         
-        # set input field as focus after 100ms
-        self.root.after(100, lambda: self.input.focus_set())
-        
         # start loop
         self.schedule_update()
+    
+    def force_geometry_update_at_start(self):
+        self.root.update_idletasks()
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        self.root.geometry(f"+{x+1}+{y+1}")
         
         
     def clicked_recently(self):
@@ -135,6 +140,11 @@ class GUIApp:
         self.theme.clear_registries()
         self.build_layout()
         self.theme.apply(self.theme.current_theme)
+        
+        if self.current_event and self.current_event_id:
+            self.show_event_details(self.current_event_id)
+        
+        logger.debug(f"Reloaded UI")
     
 
     def rebuild(self):
@@ -164,19 +174,18 @@ class GUIApp:
         # Then apply visual theme after rebuild
         self.theme.apply(theme_name=theme_name)
         
-        # Inform that theme has been changed
-        # this also forces output window to not be empty after rebuild
-        # since we print to output widget when log buffer is changed
+        # Info log theme change
         logger.info(f"Theme changed to '{self.theme.current_theme}'")
-    
+
     
     def save_window_position(self):
         self.root.update_idletasks()
+        self.ctx.state["window_geometry"] = self.root.geometry()
         self.ctx.state["window_pos_x"] = self.root.winfo_x()
         self.ctx.state["window_pos_y"] = self.root.winfo_y()
         self.ctx.state["window_width"] = self.root.winfo_width()
         self.ctx.state["window_height"] = self.root.winfo_height()
-        self.ctx.state["window_geometry"] = self.root.geometry()
+        
     
     # ----------------------------
     # Layout
@@ -402,7 +411,7 @@ class GUIApp:
         self.detail = tk.Text(
             detail_frame,
             wrap="word",
-            height=9
+            height=10
         )
 
         self.detail.grid(row=0, column=0, sticky="nsew")
@@ -419,8 +428,12 @@ class GUIApp:
         self.footer = ttk.Frame(self.root)
         self.footer.grid(row=6, column=0, sticky="ew")
 
-        self.footer_label = ttk.Label(
-            self.footer, text="", style="Footer.TLabel", anchor="w"
+        self.footer_label = tk.Text(
+            self.footer,
+            height=1,
+            borderwidth=0,
+            highlightthickness=0,
+            wrap="none"
         )
         
         self.footer_label.grid(row=0, column=0, sticky="ew")
@@ -433,6 +446,8 @@ class GUIApp:
         # ---- append widgets to to theme widget registry ----
         
         self.theme.comboboxes.append(self.kill_input)
+        self.theme.inputs.append(self.input)
+        self.theme.inputs.append(self.poll_input)
         
         if hasattr(self, "output"):
             self.theme.text_widgets.append(self.output)
@@ -442,8 +457,7 @@ class GUIApp:
 
         if hasattr(self, "footer_label"):
             self.theme.footer_widgets.append(self.footer_label)
-            
-            
+
             
         # Store grid settings for later use
         self.detail_grid_info = self.detail.grid_info()
@@ -452,7 +466,57 @@ class GUIApp:
         self.footer_grid_info = self.footer.grid_info()
         
         
+        # set input field as focus after a short amount of time
+        self.root.after(150, lambda: self.input.focus_set())
         
+
+    def resize_footer_to_text(self):
+        text = self.footer_label.get("1.0", "end-1c")
+        if not text:
+            text = " "
+        
+        font = self.footer_label.cget("font")
+        try:
+            tk_font = tk.font.Font(font=font)
+            pixel_width = tk_font.measure(text)
+            
+        except Exception:
+            pixel_width = len(text) * 7
+        
+        char_width = max(1, len(text))
+        self.footer_label.config(width=char_width)
+        
+
+    def print_footer(self, line=None):
+        self.footer_label.config(state="normal")
+        self.footer_label.delete("1.0", "end")
+
+        if not line:
+            self.footer_label.config(state="disabled")
+            return
+
+        if all(x in line.lower() for x in ("click ", ": ")):
+            try:
+                parts = line.split(": ")
+                sepparator = ": "
+                prefix = parts[0].strip()
+                key = parts[1].strip()
+                rest = parts[2:].strip() if len(parts) >= 3 else None
+                
+                self.footer_label.insert("end", f"{prefix}{sepparator}")
+                self.footer_label.insert("end", key, "bold")
+                self.footer_label.insert("end", f"{rest if rest else '' }")
+            
+            except Exception:
+                pass
+            
+        else:
+            self.footer_label.insert("1.0", line)
+            
+        self.resize_footer_to_text()
+        self.footer_label.config(state="disabled")
+    
+    
     def hover_text(self, widget: tk.Text, event, tag_name="hover"):
         """
         Universal hover handler for tk.Text.
@@ -505,61 +569,95 @@ class GUIApp:
     
     
     def flash_widget(self, widget, duration: int = 3000, invert=True, bg=None, fg=None):
+        """
+        Flash a widget
+        """
         duration = max(duration, 3000)
-
         timer_attr = f"_flash_id_{id(widget)}"
         color_attr = f"_flash_colors_{id(widget)}"
 
+        # Cancel any existing flash
         existing = getattr(self, timer_attr, None)
         if existing:
             self.root.after_cancel(existing)
 
-        style = self.theme.style
+        is_text_widget = isinstance(widget, tk.Text)
+        style = getattr(self.theme, "style", None)
+        style_name = None
 
-        style_name = widget.cget("style") if "style" in widget.keys() else widget.winfo_class()
-        if not style_name:
-            style_name = widget.winfo_class()
+        # --- Capture original colors ---
+        if is_text_widget:
+            try:
+                orig_bg = widget.cget("background")
+            except tk.TclError:
+                orig_bg = bg or "white"
+            try:
+                orig_fg = widget.cget("foreground")
+            except tk.TclError:
+                orig_fg = fg or "black"
+        else:
+            # ttk widget: get style name
+            if "style" in widget.keys():
+                style_name = widget.cget("style")
+            else:
+                style_name = widget.winfo_class()
 
-        # ---- get original colors once ----
-        orig_bg = style.lookup(style_name, "background") or bg
-        orig_fg = style.lookup(style_name, "foreground") or fg
+            if style and style_name:
+                orig_bg = style.lookup(style_name, "background") or bg
+                orig_fg = style.lookup(style_name, "foreground") or fg
+            else:
+                orig_bg = bg or "white"
+                orig_fg = fg or "black"
 
         setattr(self, color_attr, (orig_bg, orig_fg))
 
-        # ---- calculate flash colors ----
+        # --- Calculate flash colors ---
         if invert:
             try:
                 temp_bg = invert_color(orig_bg) if orig_bg else bg
                 temp_fg = invert_color(orig_fg) if orig_fg else fg
             except Exception:
-                temp_bg, temp_fg = bg, fg
+                temp_bg = bg or orig_bg
+                temp_fg = fg or orig_fg
         else:
-            temp_bg, temp_fg = bg, fg
+            temp_bg = bg or orig_bg
+            temp_fg = fg or orig_fg
 
-        # ---- lock theme while flashing ----
+        # --- Lock theme ---
         self.theme.is_theme_locked = True
 
-        if temp_bg:
-            style.configure(style_name, background=temp_bg)
-
-        if temp_fg:
-            style.configure(style_name, foreground=temp_fg)
+        if is_text_widget:
+            widget.config(state="normal")
+            widget.configure(background=temp_bg, foreground=temp_fg)
+        else:
+            if style and style_name:
+                if temp_bg:
+                    style.configure(style_name, background=temp_bg)
+                if temp_fg:
+                    style.configure(style_name, foreground=temp_fg)
 
         def restore():
             orig_bg, orig_fg = getattr(self, color_attr, (None, None))
 
-            if orig_bg:
-                style.configure(style_name, background=orig_bg)
-
-            if orig_fg:
-                style.configure(style_name, foreground=orig_fg)
-
-            if widget is self.footer_label:
-                self.footer_label.configure(text="")
+            if is_text_widget:
+                if orig_bg:
+                    widget.configure(background=orig_bg)
+                if orig_fg:
+                    widget.configure(foreground=orig_fg)
+                
+                if widget is self.footer_label:
+                    self.print_footer()
+                    
+                widget.config(state="disabled")
+            else:
+                if style and style_name:
+                    if orig_bg:
+                        style.configure(style_name, background=orig_bg)
+                    if orig_fg:
+                        style.configure(style_name, foreground=orig_fg)
 
             setattr(self, timer_attr, None)
             setattr(self, color_attr, None)
-
             self.theme.is_theme_locked = False
 
         flash_id = self.root.after(duration, restore)
@@ -607,24 +705,32 @@ class GUIApp:
         
     
     def extract_event_id(self, line: str):
-        # todo: should upgrade this to instead
-        # perform regex matching at some point
-        
-        if " - " not in line:
-            return None
-
-        parts = line.split(" - ")
-        first_part = parts[0]
-
-        if ":" in first_part:
-            eid = first_part.split(":")[1].strip()
-            try:
-                return int(eid)
+        if not line:
+            return
             
-            except ValueError:
-                pass
+        line = line.lower()
+        matches = re.findall(r"\s(\d{6,})\s", line)
+        event_ids = set()
+        event_ids = [str(eid.get("id")) for eid in load_events() if eid.get("id", None) != None]
+        if matches:
+            for match in matches:
+                if match in event_ids:
+                    try:
+                        return match
+                        
+                    except Exception as e:
+                        pass
 
         return None
+    
+    def has_valid_eid_format(self, line: str):
+        if not line:
+            return
+            
+        matches = re.findall(r"\s(\d{6,})\s", line)
+        
+        if matches:
+            return matches[0]
 
     # ----------------------------
     # (on) Widget Actions
@@ -639,16 +745,24 @@ class GUIApp:
 
         self.last_hover = time.perf_counter()
         line = self.hover_text(self.output, event, "hover")
+        
+        e = self.has_valid_eid_format(line)
+        
+        if e and not self.is_widget_flashing(self.footer_label):
+            self.print_footer(f"Click for more info: {e}")
 
     
     def on_output_leave(self, event):
         self.hover_text(self.output, event, "leave")
+        if not self.is_widget_flashing(self.footer_label):
+            self.print_footer()
+            
     
     def on_output_click(self, event):
         self.update_click()
         line = self.hover_text(self.output, event, "click")
         
-        if not line or line == "break":
+        if not line:
             return
             
         event_id = self.extract_event_id(line)
@@ -720,6 +834,8 @@ class GUIApp:
     def on_press_hide(self):
         self.toggle_compact_mode()
     
+    
+    
     # ---- detail widget area ----
     
     def show_event_details(self, event_id):
@@ -729,53 +845,83 @@ class GUIApp:
             return
 
         flat = flatten_dict(event)
+
+        self.current_event_id = str(event_id)
         self.current_event = flat
 
+        self.render_detail_lines(flat)
+
+
+    def render_detail_lines(self, flat):
         self.detail.config(state="normal")
         self.detail.delete("1.0", tk.END)
 
-        for k, v in flat.items():
-            self.detail.insert(tk.END, f"{k}: {v}\n")
+        for i, (k, v) in enumerate(flat.items(), start=1):
+            line = f"{k}: {v}\n"
+            self.detail.insert(tk.END, line)
 
+        self.detail.insert(tk.END, "(all)")
         self.detail.config(state="disabled")
-    
+            
+            
+            
     def on_detail_hover(self, event):
         now = time.perf_counter()
         if now - self.last_hover < 0.05:
             return
             
         self.last_hover = now
-        
         line = self.hover_text(self.detail, event, "hover")
-        if line == "break" or not line:
+        
+        if not line:
             return
             
         if not self.is_widget_flashing(self.footer_label):
-            if line and "http" in line and "/" in line:
-                self.footer_label.config(text="Click to copy URL")
+            try:
+                key, value = line.split(": ", 1)
+                key = key.split()[-1]
+            
+            except ValueError:
+                key, value = (None, None)
+            
+            if key and value:
+                self.print_footer(f"Click to copy: {key}")
+            
+            elif "(all)" in line:
+                self.print_footer("Click to copy: all")
             
             else:
-                self.footer_label.config(text="")
+                self.print_footer()
+                
         
     def on_detail_leave(self, event):
         line = self.hover_text(self.detail, event, "leave")
         
         if not self.is_widget_flashing(self.footer_label):
-            self.footer_label.config(text="")
+            self.print_footer()
             return
             
     
     def on_detail_click(self, event):
         self.update_click()
         line = self.hover_text(self.detail, event, "click")
-        if line and "http" in line and "/" in line:
-            line = str(line[line.find("http"):])
+        
+        if not line:
+            return
+        
+        try:
+            key, value = line.split(": ", 1)
+            key = key.split()[-1]
             self.root.clipboard_clear()
-            self.root.clipboard_append(line)
+            self.root.clipboard_append(str(value))
             
             if not self.is_widget_flashing(self.footer_label):
-                self.footer_label.config(text="URL copied to clipboard!")
+                self.print_footer(f"Copied {key.upper()} to clipboard!")
                 self.flash_widget(self.footer_label)
+                
+        except ValueError:
+            pass
+
     
     # ---- input widget area ----
     
@@ -818,20 +964,6 @@ class GUIApp:
         self.input.insert(0, text)
         self.input.icursor(tk.END)
     
-    # ---- Not In Use / Not Yet Implemented ----
-    
-    def on_copy_url(self):
-        if not self.current_event:
-            return
-
-        event = self.current_event
-
-        url = event.get("url")
-        if not url:
-            return
-
-        self.root.clipboard_clear()
-        self.root.clipboard_append(url)
 
     # ----------------------------
     # Updater
