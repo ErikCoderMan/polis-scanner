@@ -57,6 +57,7 @@ class GUIApp:
         self.last_hover = 0
         self.compact_mode = False
         self.active_flashes = {}
+        self.rendered_lines = 0
         
         # ---- buffers ----
         
@@ -132,12 +133,19 @@ class GUIApp:
             
         
     def reload_ui(self):
+        saved_output = self.output.get("1.0", "end-1c")
+        scroll_pos = self.output.yview()
+        
         for child in self.root.winfo_children():
             child.destroy()
         
         self.theme.clear_registries()
         self.build_layout()
         self.theme.apply(self.theme.current_theme)
+        
+        self.rendered_lines = 0
+        self.print_output(saved_output, auto_scroll=False)
+        self.output.yview_moveto(scroll_pos[0])
         
         if self.current_event and self.current_event_id:
             self.show_event_details(self.current_event_id)
@@ -998,6 +1006,9 @@ class GUIApp:
             handle_command(text=text, ctx=self.ctx),
             self.loop
         )
+        
+        self.ctx.state["force_scroll"] = True
+        
     
     def history_up(self, event):
         text = self.history.previous()
@@ -1019,28 +1030,46 @@ class GUIApp:
         self.input.insert(0, text)
         self.input.icursor(tk.END)
         
+        
+    def is_near_bottom(self, widget, total_rendered_lines: int) -> bool:
+        first_visible = int(widget.index("@0,0").split(".")[0])
+        last_visible = int(widget.index(f"@0,{widget.winfo_height()}").split(".")[0])
+        visible_lines = last_visible - first_visible
+        
+        return total_rendered_lines - last_visible <= visible_lines
 
-    def print_output(self, snapshot: str = None):
-            
+
+    def print_output(self, snapshot: str, auto_scroll=True):
         LOG_RE = re.compile(r"^\[[+\-!i]\]\s\d{2}:\d{2}:\d{2}")
-        
+        lines = snapshot.splitlines()
+        new_lines = lines[self.rendered_lines:]
+
+        if not new_lines:
+            return
+
         self.output.config(state="normal")
-        self.output.delete("1.0", tk.END)
-        
-        for line in snapshot.splitlines():
+
+        if auto_scroll:
+            near_bottom = self.is_near_bottom(self.output, total_rendered_lines = self.rendered_lines)
+        else:
+            near_bottom = False
+
+        for line in new_lines:
             if LOG_RE.match(line):
                 parts = line.split(" | ", 1)
-                sepparator = " | "
+                separator = " | "
                 log_text = parts[0].strip()
-                rest = "".join(parts[1:]) if len(parts) >= 2 else ""
-                    
-                self.output.insert("end", f"{log_text}{sepparator}", "log")
+                rest = parts[1] if len(parts) >= 2 else ""
+                self.output.insert("end", f"{log_text}{separator}", "log")
                 self.output.insert("end", f"{rest}\n")
-                
             else:
                 self.output.insert("end", f"{line}\n")
-                
+
+        if auto_scroll and near_bottom:
+            self.output.see("end")
+
         self.output.config(state="disabled")
+        self.rendered_lines = len(lines)
 
     # ----------------------------
     # Updater
@@ -1063,22 +1092,18 @@ class GUIApp:
         title_text = (
             f"{left_siren} {clock} | "
             f"{settings.app_name} v{settings.version} (GUI) | "
-            f"{len(snapshot.splitlines())} lines {right_siren}"
+            f"{self.rendered_lines} lines {right_siren}"
         )
         self.title_label.config(text=title_text)
-
+        
+        if self.ctx.state.get("force_scroll", False):
+            self.output.see("end")
+            
         # ---- Output update ----
         if snapshot != self.last_snapshot:
-            # Check if user is near bottom
-            self.output.config(state="normal")
-            bottom_visible = self.output.yview()[1] > 0.95
-            
-            # Print the new snapshot to output widget
             self.print_output(snapshot)
-
-            if bottom_visible or self.ctx.state.get("force_scroll", None):
-                self.output.see(tk.END)
-
-            self.output.config(state="disabled")
             self.last_snapshot = snapshot
+            
+            
+            
 
