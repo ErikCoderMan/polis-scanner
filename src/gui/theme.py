@@ -381,14 +381,14 @@ class ThemeManager:
 
     def _define_default(self):
         font_log_obj = tkfont.nametofont("TkFixedFont").copy()
-        font_text_obj = tkfont.Font(font="TkTextFont")
-        font_input_obj = tkfont.Font(font="TkFixedFont")
-        font_menu_obj = tkfont.Font(font="TkMenuFont")
-        font_menubutton_obj = tkfont.Font(font="TkDefaultFont")
-        font_combobox_obj = tkfont.Font(font="TkDefaultFont")
-        font_footer_obj = tkfont.Font(font="TkFixedFont")
-        font_button_obj = tkfont.Font(font="TkDefaultFont")
-        font_label_obj = tkfont.Font(font="TkDefaultFont")
+        font_text_obj = tkfont.nametofont("TkTextFont").copy()
+        font_input_obj = tkfont.nametofont("TkFixedFont").copy()
+        font_menu_obj = tkfont.nametofont("TkMenuFont").copy()
+        font_menubutton_obj = tkfont.nametofont("TkDefaultFont").copy()
+        font_combobox_obj = tkfont.nametofont("TkDefaultFont").copy()
+        font_footer_obj = tkfont.nametofont("TkFixedFont").copy()
+        font_button_obj = tkfont.nametofont("TkDefaultFont").copy()
+        font_label_obj = tkfont.nametofont("TkDefaultFont").copy()
         
 
         self.fonts.setdefault("default", {}).update({

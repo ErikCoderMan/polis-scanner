@@ -19,3 +19,9 @@ logger = get_logger(__name__)
 async def cmd_clear(args=None, ctx: RuntimeContext=None):
     logger.info("Clearing screen...") # still being written to file log
     log_buffer.clear()
+    
+    if ctx.is_gui and ctx.ui:
+        ctx.ui.rendered_lines = 0
+        ctx.ui.output.config(state="normal")
+        ctx.ui.output.delete("1.0", "end")
+        ctx.ui.output.config(state="disabled")
