@@ -56,6 +56,7 @@ class GUIApp:
         self.last_time_clicked = time.perf_counter()
         self.last_hover = 0
         self.compact_mode = False
+        self.active_flashes = {}
         
         # ---- buffers ----
         
@@ -86,12 +87,9 @@ class GUIApp:
         # Save window geometry info
         self.save_window_position()
         
-        # Store default theme
-        self.theme.store_defaults()
         
         # Apply theme from config, fallback default
         theme = settings.default_theme
-        self.theme.apply("default")
         
         if theme:
             self.theme.apply(theme)
@@ -167,6 +165,9 @@ class GUIApp:
             "POLIS_SCANNER_DEFAULT_THEME",
             theme_name
         )
+        
+        # Stop all active flashes to prevent bugged colors
+        self.stop_all_flashes()
 
         # Rebuild UI structure
         self.rebuild()
@@ -192,8 +193,10 @@ class GUIApp:
     # ----------------------------
     
     def build_layout(self):
+        # TODO: rename widgets with consistent names
+        # just like all the ttk.Buttons, example: name_button
+        
         self.root.geometry(f"{self.ctx.state['window_width']}x{self.ctx.state['window_height']}")
-
         # ---- Root ----
         
         self.root.grid_columnconfigure(0, weight=1)
@@ -207,19 +210,19 @@ class GUIApp:
         # ---- Title bar ----
         
         # Title bar container
-        title_bar = ttk.Frame(self.root)
-        title_bar.grid(row=0, column=0, sticky="ew")
+        self.title_bar = ttk.Frame(self.root)
+        self.title_bar.grid(row=0, column=0, sticky="ew")
 
-        title_bar.grid_columnconfigure(0, weight=1)
-        title_bar.grid_columnconfigure(1, weight=0)
+        self.title_bar.grid_columnconfigure(0, weight=1)
+        self.title_bar.grid_columnconfigure(1, weight=0)
 
         # Title label (center expand)
-        self.title_label = ttk.Label(title_bar, anchor="center")
+        self.title_label = ttk.Label(self.title_bar, anchor="center")
         self.title_label.grid(row=0, column=0, sticky="ew", columnspan=2)
 
         # Theme menu button (right aligned)
         self.theme_menu_button = ttk.Menubutton(
-            title_bar,
+            self.title_bar,
             text="Theme",
             style="TMenubutton"
         )
@@ -244,19 +247,19 @@ class GUIApp:
 
         # ---- Output ----
         
-        output_frame = ttk.Frame(self.root)
-        output_frame.grid(row=2, column=0, sticky="nsew")
+        self.output_frame = ttk.Frame(self.root)
+        self.output_frame.grid(row=2, column=0, sticky="nsew")
 
         self.output = tk.Text(
-            output_frame,
+            self.output_frame,
             wrap="word",
-            state="disabled"
+            state="disabled",
         )
 
         self.output.grid(row=0, column=0, sticky="nsew")
 
         self.output_vbar = ttk.Scrollbar(
-            output_frame,
+            self.output_frame,
             orient="vertical",
             command=self.output.yview
         )
@@ -266,8 +269,8 @@ class GUIApp:
         self.output_vbar.grid(row=0, column=1, sticky="ns")
 
         # Allow text widget to expand
-        output_frame.grid_rowconfigure(0, weight=1)
-        output_frame.grid_columnconfigure(0, weight=1)
+        self.output_frame.grid_rowconfigure(0, weight=1)
+        self.output_frame.grid_columnconfigure(0, weight=1)
         
         self.output.bind("<Button-1>", self.on_output_click)
         self.output.bind("<Motion>", self.on_output_hover)
@@ -275,13 +278,13 @@ class GUIApp:
         
         # ---- Input ----
         
-        input_frame = ttk.Frame(self.root)
-        input_frame.grid(row=3, column=0, sticky="ew")
-        input_frame.grid_columnconfigure(1, weight=1)
+        self.input_frame = ttk.Frame(self.root)
+        self.input_frame.grid(row=3, column=0, sticky="ew")
+        self.input_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(input_frame, text="> ").grid(row=0, column=0, padx=2)
+        self.input_label = ttk.Label(self.input_frame, text="> ").grid(row=0, column=0, padx=2)
 
-        self.input = ttk.Entry(input_frame)
+        self.input = ttk.Entry(self.input_frame)
         self.input.grid(row=0, column=1, sticky="ew", padx=2)
         
         self.input.bind("<Return>", self.on_enter)
@@ -300,11 +303,13 @@ class GUIApp:
         
         # Buttons
         for butt in ["load", "refresh", "clear"]:
-            ttk.Button(
+            b = ttk.Button(
                 self.command_toolbar,
                 text=butt.title(),
                 command=getattr(self, f"on_press_{butt}")
-            ).grid(row=0, column=col, padx=2, pady=2)
+            )
+            setattr(self, f"{butt}_button", b)
+            b.grid(row=0, column=col, padx=2, pady=2)
             col += 1
 
         # Separator
@@ -320,27 +325,31 @@ class GUIApp:
         )
         col += 1
         
-        ttk.Label(self.command_toolbar, text="Tasks: ").grid(row=0, column=col, padx=0)
+        self.tasks_label = ttk.Label(self.command_toolbar, text="Tasks: ").grid(row=0, column=col, padx=0)
         col += 1
         
         # Combobox widget for kill button
         self.kill_input = ttk.Combobox(self.command_toolbar, width=12)
         self.kill_input.grid(row=0, column=col, pady=2, padx=2)
         
+        self.kill_input
+        
         col += 1
         
         
         # Kill button
-        ttk.Button(
+        b = ttk.Button(
             self.command_toolbar,
             text="kill".title(),
             command=self.on_press_kill
-        ).grid(row=0, column=col, padx=2, pady=2)
-        
+        )
+        setattr(self, "kill_button", b)
+        b.grid(row=0, column=col, padx=2, pady=2)
         col += 1
         
         
         self.kill_input.bind("<Button-1>", self.on_kill_input_click)
+        self.kill_input.bind("<Return>", self.on_press_kill)
         
         # Separator
         ttk.Frame(
@@ -368,11 +377,13 @@ class GUIApp:
         self.poll_input.bind("<Return>", self.on_press_poll)
         
         # Poll button
-        ttk.Button(
+        b = ttk.Button(
             self.command_toolbar,
             text="poll".title(),
             command=self.on_press_poll
-            ).grid(row=0, column=col, padx=2, pady=2)
+        )
+        setattr(self, "poll_button", b)
+        b.grid(row=0, column=col, padx=2, pady=2)
         col += 1
         
         # Separator
@@ -390,26 +401,29 @@ class GUIApp:
         
         # Spacer before right-aligned buttons
         self.command_toolbar.grid_columnconfigure(col, weight=1)
-        ttk.Frame(self.command_toolbar).grid(row=0, column=col, sticky="ew")
+        self.right_button_spacer= ttk.Frame(self.command_toolbar)
+        self.right_button_spacer.grid(row=0, column=col, sticky="ew")
         col += 1
 
         # Right aligned buttons
         for butt in ["exit", "help", "hide"]:
-            ttk.Button(
+            b = ttk.Button(
                 self.command_toolbar,
                 text=butt.title(),
                 command=getattr(self, f"on_press_{butt}")
-            ).grid(row=0, column=col, padx=2)
+            )
+            setattr(self, f"{butt}_button", b)
+            b.grid(row=0, column=col, padx=2)
             col += 1
         
         
         # ---- Detail widget ----
 
-        detail_frame = ttk.Frame(self.root)
-        detail_frame.grid(row=5, column=0, sticky="nsew")
+        self.detail_frame = ttk.Frame(self.root)
+        self.detail_frame.grid(row=5, column=0, sticky="nsew")
 
         self.detail = tk.Text(
-            detail_frame,
+            self.detail_frame,
             wrap="word",
             height=10
         )
@@ -417,8 +431,8 @@ class GUIApp:
         self.detail.grid(row=0, column=0, sticky="nsew")
         self.detail.config(state="disabled")
 
-        detail_frame.grid_rowconfigure(0, weight=1)
-        detail_frame.grid_columnconfigure(0, weight=1)
+        self.detail_frame.grid_rowconfigure(0, weight=1)
+        self.detail_frame.grid_columnconfigure(0, weight=1)
 
         self.detail.bind("<Button-1>", self.on_detail_click)
         self.detail.bind("<Motion>", self.on_detail_hover)
@@ -444,24 +458,20 @@ class GUIApp:
         
         
         # ---- append widgets to to theme widget registry ----
-        
-        self.theme.comboboxes.append(self.kill_input)
-        self.theme.inputs.append(self.input)
-        self.theme.inputs.append(self.poll_input)
-        
-        if hasattr(self, "output"):
-            self.theme.text_widgets.append(self.output)
-
-        if hasattr(self, "detail"):
-            self.theme.text_widgets.append(self.detail)
-
-        if hasattr(self, "footer_label"):
-            self.theme.footer_widgets.append(self.footer_label)
-
+        self.theme.menus = [v for v in vars(self).values() if isinstance(v, tk.Menu)]
+        self.theme.menubuttons = [v for v in vars(self).values() if isinstance(v, ttk.Menubutton)]
+        self.theme.text_widgets = [v for v in vars(self).values() if isinstance(v, tk.Text)]
+        self.theme.inputs = [v for v in vars(self).values() if isinstance(v, ttk.Entry)]
+        self.theme.comboboxes = [v for v in vars(self).values() if isinstance(v, ttk.Combobox)]
+        self.theme.listboxes = [v for v in vars(self).values() if isinstance(v, tk.Listbox)]
+        self.theme.labels = [v for v in vars(self).values() if isinstance(v, ttk.Label)]
+        self.theme.frames = [v for v in vars(self).values() if isinstance(v, ttk.Frame)]
+        self.theme.buttons = [v for v in vars(self).values() if isinstance(v, ttk.Button)]
+            
             
         # Store grid settings for later use
         self.detail_grid_info = self.detail.grid_info()
-        self.detail_frame = detail_frame
+        self.detail_frame = self.detail_frame
         self.footer_frame = self.footer
         self.footer_grid_info = self.footer.grid_info()
         
@@ -569,34 +579,32 @@ class GUIApp:
     
     
     def flash_widget(self, widget, duration: int = 3000, invert=True, bg=None, fg=None):
-        """
-        Flash a widget
-        """
         duration = max(duration, 3000)
-        timer_attr = f"_flash_id_{id(widget)}"
-        color_attr = f"_flash_colors_{id(widget)}"
 
-        # Cancel any existing flash
-        existing = getattr(self, timer_attr, None)
-        if existing:
-            self.root.after_cancel(existing)
+        # Stop existing flash on this widget
+        if widget in self.active_flashes:
+            self.stop_flash(widget)
 
-        is_text_widget = isinstance(widget, tk.Text)
         style = getattr(self.theme, "style", None)
-        style_name = None
+        is_text = isinstance(widget, tk.Text)
 
-        # --- Capture original colors ---
-        if is_text_widget:
+        # -------------------------------------------------
+        # Capture original colors
+        # -------------------------------------------------
+        if is_text:
             try:
                 orig_bg = widget.cget("background")
             except tk.TclError:
                 orig_bg = bg or "white"
+
             try:
                 orig_fg = widget.cget("foreground")
             except tk.TclError:
                 orig_fg = fg or "black"
+
+            style_name = None
+
         else:
-            # ttk widget: get style name
             if "style" in widget.keys():
                 style_name = widget.cget("style")
             else:
@@ -609,9 +617,9 @@ class GUIApp:
                 orig_bg = bg or "white"
                 orig_fg = fg or "black"
 
-        setattr(self, color_attr, (orig_bg, orig_fg))
-
-        # --- Calculate flash colors ---
+        # -------------------------------------------------
+        # Calculate flash colors
+        # -------------------------------------------------
         if invert:
             try:
                 temp_bg = invert_color(orig_bg) if orig_bg else bg
@@ -623,12 +631,13 @@ class GUIApp:
             temp_bg = bg or orig_bg
             temp_fg = fg or orig_fg
 
-        # --- Lock theme ---
-        self.theme.is_theme_locked = True
-
-        if is_text_widget:
+        # -------------------------------------------------
+        # Apply flash
+        # -------------------------------------------------
+        if is_text:
             widget.config(state="normal")
             widget.configure(background=temp_bg, foreground=temp_fg)
+
         else:
             if style and style_name:
                 if temp_bg:
@@ -636,38 +645,74 @@ class GUIApp:
                 if temp_fg:
                     style.configure(style_name, foreground=temp_fg)
 
-        def restore():
-            orig_bg, orig_fg = getattr(self, color_attr, (None, None))
+        # -------------------------------------------------
+        # Schedule restore
+        # -------------------------------------------------
+        timer = self.root.after(duration, lambda: self.stop_flash(widget))
 
-            if is_text_widget:
-                if orig_bg:
-                    widget.configure(background=orig_bg)
-                if orig_fg:
-                    widget.configure(foreground=orig_fg)
-                
-                if widget is self.footer_label:
-                    self.print_footer()
-                    
-                widget.config(state="disabled")
-            else:
-                if style and style_name:
-                    if orig_bg:
-                        style.configure(style_name, background=orig_bg)
-                    if orig_fg:
-                        style.configure(style_name, foreground=orig_fg)
-
-            setattr(self, timer_attr, None)
-            setattr(self, color_attr, None)
-            self.theme.is_theme_locked = False
-
-        flash_id = self.root.after(duration, restore)
-        setattr(self, timer_attr, flash_id)
+        self.active_flashes[widget] = {
+            "timer": timer,
+            "orig_bg": orig_bg,
+            "orig_fg": orig_fg,
+            "style_name": style_name,
+            "is_text": is_text
+        }
         
         
+    def stop_flash(self, widget):
+        data = self.active_flashes.get(widget)
+        if not data:
+            return
+
+        timer = data.get("timer")
+
+        try:
+            self.root.after_cancel(timer)
+        except Exception:
+            pass
+
+        self._restore_widget(widget)
         
+    
+    def stop_all_flashes(self):
+        for widget in list(self.active_flashes.keys()):
+            self.stop_flash(widget)
+    
+    
     def is_widget_flashing(self, widget):
-        timer_attr = f"_flash_id_{id(widget)}"
-        return getattr(self, timer_attr, None) is not None
+        status = self.active_flashes.get(widget, None) is not None
+        return status
+        
+    
+    def _restore_widget(self, widget):
+        data = self.active_flashes.pop(widget, None)
+        if not data:
+            return
+
+        style = getattr(self.theme, "style", None)
+
+        orig_bg = data["orig_bg"]
+        orig_fg = data["orig_fg"]
+        style_name = data["style_name"]
+        is_text = data["is_text"]
+
+        if is_text:
+            if orig_bg:
+                widget.configure(background=orig_bg)
+            if orig_fg:
+                widget.configure(foreground=orig_fg)
+
+            if widget is self.footer_label:
+                self.print_footer()
+
+            widget.config(state="disabled")
+
+        else:
+            if style and style_name:
+                if orig_bg:
+                    style.configure(style_name, background=orig_bg)
+                if orig_fg:
+                    style.configure(style_name, foreground=orig_fg)
     
     
     
@@ -789,7 +834,7 @@ class GUIApp:
             handle_command(text="clear", ctx=self.ctx),
             self.loop
         )
-    def on_press_poll(self):
+    def on_press_poll(self, event=None):
         asyncio.run_coroutine_threadsafe(
             handle_command(text=f"poll {self.poll_input.get().strip()}", ctx=self.ctx),
             self.loop
@@ -805,7 +850,7 @@ class GUIApp:
         
         self.kill_input["values"] = [s for s in running.keys()]
         
-    def on_press_kill(self):
+    def on_press_kill(self, event=None):
         asyncio.run_coroutine_threadsafe(
             handle_command(text=f"kill {self.kill_input.get()}", ctx=self.ctx),
             self.loop
@@ -909,19 +954,29 @@ class GUIApp:
         if not line:
             return
         
-        try:
-            key, value = line.split(": ", 1)
-            key = key.split()[-1]
-            self.root.clipboard_clear()
-            self.root.clipboard_append(str(value))
-            
-            if not self.is_widget_flashing(self.footer_label):
-                self.print_footer(f"Copied {key.upper()} to clipboard!")
+        if not "(all)" in line and ": " in line:
+            try:
+                key, value = line.split(": ", 1)
+                key = key.split()[-1]
+                self.root.clipboard_clear()
+                self.root.clipboard_append(str(value))
                 self.flash_widget(self.footer_label)
+                self.print_footer(f"Copied {key.upper()} to clipboard!")
+                    
+            except ValueError:
+                pass
+        
+        elif "(all)" in line and ": " not in line:
+            try:
+                lines = "\n".join([str(v) for v in self.current_event.values()])
+                self.root.clipboard_clear()
+                self.root.clipboard_append(str(lines))
+                self.flash_widget(self.footer_label)
+                self.print_footer("Copied ALL to clipboard!")
+                    
+            except ValueError:
+                pass
                 
-        except ValueError:
-            pass
-
     
     # ---- input widget area ----
     
@@ -963,7 +1018,31 @@ class GUIApp:
         self.input.delete(0, tk.END)
         self.input.insert(0, text)
         self.input.icursor(tk.END)
-    
+        
+
+    def print_output(self, snapshot: str = None):
+        if not snapshot:
+            return
+            
+        LOG_RE = re.compile(r"^\[[+\-!i]\]\s\d{2}:\d{2}:\d{2}")
+        
+        self.output.config(state="normal")
+        self.output.delete("1.0", tk.END)
+        
+        for line in snapshot.splitlines():
+            if LOG_RE.match(line):
+                parts = line.split(" | ", 1)
+                sepparator = " | "
+                log_text = parts[0].strip()
+                rest = "".join(parts[1:]) if len(parts) >= 2 else ""
+                    
+                self.output.insert("end", f"{log_text}{sepparator}", "log")
+                self.output.insert("end", f"{rest}\n")
+                
+            else:
+                self.output.insert("end", f"{line}\n")
+                
+        self.output.config(state="disabled")
 
     # ----------------------------
     # Updater
@@ -992,13 +1071,12 @@ class GUIApp:
 
         # ---- Output update ----
         if snapshot != self.last_snapshot:
-            self.output.config(state="normal")
-
+            # Print the new snapshot to output widget
+            self.print_output(snapshot)
+            
             # Check if user is near bottom
+            self.output.config(state="normal")
             bottom_visible = self.output.yview()[1] > 0.95
-
-            self.output.delete("1.0", tk.END)
-            self.output.insert(tk.END, snapshot)
 
             if bottom_visible or self.ctx.state.get("force_scroll", None):
                 self.output.see(tk.END)
