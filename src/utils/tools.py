@@ -32,7 +32,7 @@ def str_to_hex(string: str) -> int:
 def invert_color(color: str) -> str:
     return f"#{(int(color.lstrip('#'), 16) ^ 0xFFFFFF):06x}"
 
-def generate_highlight_colors(fg: str, bg: str, adj: int = 0x121212, middle: int = 0x7fffff) -> tuple[str, str]:
+def generate_highlight_colors(fg: str, bg: str, adj: int = 0x202020, middle: int = 0x7fffff) -> tuple[str, str]:
     """
     Try to generate readable highlight colors based on theme fg/bg.
     Returns (highlight_bg, highlight_fg)
