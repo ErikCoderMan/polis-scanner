@@ -1021,8 +1021,6 @@ class GUIApp:
         
 
     def print_output(self, snapshot: str = None):
-        if not snapshot:
-            return
             
         LOG_RE = re.compile(r"^\[[+\-!i]\]\s\d{2}:\d{2}:\d{2}")
         
@@ -1071,12 +1069,12 @@ class GUIApp:
 
         # ---- Output update ----
         if snapshot != self.last_snapshot:
-            # Print the new snapshot to output widget
-            self.print_output(snapshot)
-            
             # Check if user is near bottom
             self.output.config(state="normal")
             bottom_visible = self.output.yview()[1] > 0.95
+            
+            # Print the new snapshot to output widget
+            self.print_output(snapshot)
 
             if bottom_visible or self.ctx.state.get("force_scroll", None):
                 self.output.see(tk.END)

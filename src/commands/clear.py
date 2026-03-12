@@ -19,3 +19,4 @@ logger = get_logger(__name__)
 async def cmd_clear(args=None, ctx: RuntimeContext=None):
     logger.info("Clearing screen...") # still being written to file log
     log_buffer.clear()
+    
