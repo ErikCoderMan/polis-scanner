@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import tkinter.font as tkfont
-from src.utils.tools import str_to_hex, generate_highlight_colors
+from src.utils.tools import str_to_hex, generate_highlight_colors, is_using_dark_theme
 
 
 class ThemeManager:
@@ -50,7 +50,7 @@ class ThemeManager:
                 "fg": "",
             }
         }
-        
+
         self.fonts = {}
         
         self.font_size = 10
@@ -95,8 +95,41 @@ class ThemeManager:
         self.themes[theme_name]()
         self.propagate_theme()
         self.set_fonts()
-        
+
+        # Update tag colors based on the new theme
+        if hasattr(self.app, "tag_manager"):
+            self.app.tag_manager.update_tags()
+
         self.root.update_idletasks()
+
+    # -------------------------------------------------
+
+    def get_tag_colors(self) -> dict[str, str]:
+        fallback = {
+            "dark_theme": {
+                "success": "#00F000",
+                "error": "#F80000",
+                "warning": "#F0A000",
+                "info": "#00A0F0"
+            },
+            "light_theme": {
+                "success": "#007000",
+                "error": "#770000",
+                "warning": "#C05000",
+                "info": "#000070"
+            }
+        }
+
+        theme_palette = self.palette.get(self.current_theme, {})
+        tag_colors = theme_palette.get("tag_colors", {})
+
+        if not tag_colors:
+            if is_using_dark_theme(self.palette[self.current_theme].get("text", {}).get("background", "#FFFFFF")):
+                return fallback["dark_theme"]
+            else:
+                return fallback["light_theme"]
+
+        return tag_colors
 
     # -------------------------------------------------
 
@@ -121,7 +154,7 @@ class ThemeManager:
         # General widget styles (TFrame, TLabel, TButton, TMenubutton, TScrollbar)
         # =====================================================
         p = self.palette.get(self.current_theme, {})
-
+        self.style.layout("ToolbuttonCheck.TCheckbutton", self.style.layout("Toolbutton"))
         for widget_name, ttk_name in [
             ("frame", "TFrame"),
             ("label", "TLabel"),
@@ -129,7 +162,9 @@ class ThemeManager:
             ("menubutton", "TMenubutton"),
             ("entry", "TEntry"),
             ("scrollbar", "TScrollbar"),
-            ("divider", "ToolbarDivider.TFrame")
+            ("divider", "ToolbarDivider.TFrame"),
+            ("spinbox", "TSpinbox"),
+            ("checkbutton", "ToolbuttonCheck.TCheckbutton"),
         ]:
             cfg = p.get(widget_name, {})
             style = cfg.get("style")
@@ -201,6 +236,13 @@ class ThemeManager:
                 lightcolor=[("focus", combo_palette.get("lightcolor_focus"))],
                 darkcolor=[("focus", combo_palette.get("darkcolor_focus"))]
             )
+            self._set_map(
+                "TCombobox",
+                fieldbackground=[("readonly", combo_palette.get("fieldbackground"))],
+                background=[("readonly", combo_palette.get("background"))],
+                foreground=[("readonly", combo_palette.get("foreground"))],
+                arrowcolor=[("readonly", combo_palette.get("arrowcolor"))]
+            )
                 
             # Listbox inside combobox
             listbox = combo_palette.get("listbox", {})
@@ -215,6 +257,10 @@ class ThemeManager:
         # Listboxes
         # =====================================================
         listbox_palette = theme_palette.get("listbox", {})
+        if not listbox_palette:
+            # Fall back to combobox's listbox palette if configured
+            listbox_palette = theme_palette.get("combobox", {}).get("listbox", {})
+
         for lb in self.listboxes:
             if not lb.winfo_exists():
                 continue
@@ -238,8 +284,55 @@ class ThemeManager:
                 apply_dict = {k: v for k, v in menu_palette.items() if k in valid_keys and v is not None}
                 if apply_dict:
                     menu.configure(**apply_dict)
-        
-    
+
+
+    def set_base_colors(self, background: str, foreground: str):
+        """Update base widget colors (bg/fg) for the current theme."""
+        tpl = self.palette.setdefault(self.current_theme, {})
+
+        # Text widgets
+        text_palette = tpl.setdefault("text", {})
+        text_palette.update({
+            "background": background,
+            "foreground": foreground,
+            "insertbackground": foreground,
+            "selectforeground": foreground,
+        })
+
+        # Entry widgets
+        entry_style = tpl.setdefault("entry", {}).setdefault("style", {})
+        entry_style.update({
+            "fieldbackground": background,
+            "foreground": foreground,
+            "insertcolor": foreground,
+        })
+
+        # Combobox widgets
+        combo_palette = tpl.setdefault("combobox", {})
+        combo_palette.update({
+            "fieldbackground": background,
+            "background": background,
+            "foreground": foreground,
+            "insertcolor": foreground,
+            "selectforeground": foreground,
+        })
+
+        # Listbox inside combobox
+        listbox_palette = combo_palette.setdefault("listbox", {})
+        listbox_palette.update({
+            "background": background,
+            "foreground": foreground,
+            "selectforeground": foreground,
+        })
+
+        # Hover highlight colors
+        h_bg, h_fg = generate_highlight_colors(fg=foreground, bg=background)
+        self.hover_text[self.current_theme]["bg"] = h_bg
+        self.hover_text[self.current_theme]["fg"] = h_fg
+
+        self.propagate_theme()
+
+
     def set_fonts(self):
         """
         Apply fonts for the current theme to all registered widgets.
@@ -364,6 +457,7 @@ class ThemeManager:
         
         widget = getattr(self.app, "output", None)
         if widget and isinstance(widget, tk.Text):
+            theme_fonts["log_font"] = log_font
             widget.tag_configure("log", font=log_font)
         
     
@@ -380,6 +474,22 @@ class ThemeManager:
     # -------------------------------------------------
 
     def _define_default(self):
+        bg = self.text_widgets[0].cget("background") if self.text_widgets else "#FFFFFF"
+        fg = self.text_widgets[0].cget("foreground") if self.text_widgets else "#000000"
+
+        self.palette.setdefault("default", {}).setdefault("text", {}).update({
+            "background": bg,
+            "foreground": fg,
+        })
+
+        self.palette["default"]["tag_colors"] = {
+            "success": "#007000",
+            "error": "#770000",
+            "warning": "#C05000",
+            "info": "#000070"
+        }
+
+
         font_log_obj = tkfont.nametofont("TkFixedFont").copy()
         font_text_obj = tkfont.nametofont("TkTextFont").copy()
         font_input_obj = tkfont.nametofont("TkFixedFont").copy()
@@ -457,6 +567,13 @@ class ThemeManager:
         # Hover text
         self.hover_text["dark"]["bg"] = "#303030"
         self.hover_text["dark"]["fg"] = fg_main
+        
+        self.palette["dark"]["tag_colors"] = {
+            "success": "#00F000",
+            "error": "#F80000",
+            "warning": "#F0A000",
+            "info": "#00A0F0"
+        }
 
         # =====================================================
         # Text widget
@@ -641,6 +758,75 @@ class ThemeManager:
                 ]
             }
         }
+
+        # =====================================================
+        # Spinbox
+        # =====================================================
+        self.palette["dark"]["spinbox"] = {
+            "style": {
+                "fieldbackground": bg_input,
+                "background": bg_input,
+                "foreground": fg_main,
+                "insertcolor": fg_main,
+                "arrowcolor": fg_secondary,
+                "arrowsize": 11,
+                "arrowbackground": bg_input,
+                "bordercolor": input_border_color,
+                "lightcolor": lightcolor,
+                "darkcolor": darkcolor,
+                "focuscolor": input_border_color_focus,
+                "borderwidth": 2,
+                "padding": 2,
+                "relief": "flat",
+                "selectbackground": select_bg,
+                "selectforeground": fg_main
+            },
+            "map": {
+                "bordercolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "lightcolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "darkcolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "arrowcolor": [
+                    ("disabled", "#707070"),
+                    ("!disabled", fg_main)
+                ]
+            }
+        }
+
+        self.palette["dark"]["checkbutton"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_main,
+                "borderwidth": 1,
+                "relief": "flat",
+                "lightcolor": lightcolor,
+                "darkcolor": darkcolor,
+                "padding": 2,
+                "bordercolor": outline_inactive,
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover),
+                    ("!active", bg_surface)
+                ],
+                "relief": [
+                    ("selected", "solid"),
+                    ("!selected", "flat")
+                ],
+                "bordercolor": [
+                    ("selected", outline_active),
+                    ("!selected", outline_inactive)
+                ]
+            }
+        }
         
         # =====================================================
         # Toolbar divider
@@ -727,8 +913,16 @@ class ThemeManager:
         select_bg = "#b0b0b0"
 
         # Hover text
-        self.hover_text["light"]["bg"] = "#d0d0d0"  # ljusare variant
+        self.hover_text["light"]["bg"] = "#d0d0d0"
         self.hover_text["light"]["fg"] = fg_main
+
+
+        self.palette["light"]["tag_colors"] = {
+            "success": "#007000",
+            "error": "#770000",
+            "warning": "#C05000",
+            "info": "#000070"
+        }
 
         # =====================================================
         # Text widget
@@ -901,6 +1095,72 @@ class ThemeManager:
                 "background": [
                     ("active", accent_hover),
                     ("pressed", accent_active)
+                ]
+            }
+        }
+
+        self.palette["light"]["spinbox"] = {
+            "style": {
+                "fieldbackground": bg_input,
+                "background": bg_input,
+                "foreground": fg_main,
+                "insertcolor": fg_main,
+                "arrowcolor": fg_secondary,
+                "arrowsize": 11,
+                "arrowbackground": bg_input,
+                "bordercolor": input_border_color,
+                "lightcolor": lightcolor,
+                "darkcolor": darkcolor,
+                "focuscolor": input_border_color_focus,
+                "borderwidth": 2,
+                "padding": 2,
+                "relief": "flat",
+                "selectbackground": select_bg,
+                "selectforeground": fg_main
+            },
+            "map": {
+                "bordercolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "lightcolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "darkcolor": [
+                    ("focus", input_border_color_focus),
+                    ("!focus", input_border_color)
+                ],
+                "arrowcolor": [
+                    ("disabled", "#707070"),
+                    ("!disabled", fg_main)
+                ]
+            }
+        }
+
+        self.palette["light"]["checkbutton"] = {
+            "style": {
+                "background": bg_main,
+                "foreground": fg_main,
+                "borderwidth": 1,
+                "relief": "flat",
+                "lightcolor": lightcolor,
+                "darkcolor": darkcolor,
+                "padding": 2,
+                "bordercolor": outline_inactive,
+            },
+            "map": {
+                "background": [
+                    ("active", accent_hover),
+                    ("!active", bg_surface)
+                ],
+                "relief": [
+                    ("selected", "solid"),
+                    ("!selected", "flat")
+                ],
+                "bordercolor": [
+                    ("selected", outline_active),
+                    ("!selected", outline_inactive)
                 ]
             }
         }

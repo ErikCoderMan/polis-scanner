@@ -32,34 +32,55 @@ def str_to_hex(string: str) -> int:
 def invert_color(color: str) -> str:
     return f"#{(int(color.lstrip('#'), 16) ^ 0xFFFFFF):06x}"
 
-def generate_highlight_colors(fg: str, bg: str, adj: int = 0x202020, middle: int = 0x7fffff) -> tuple[str, str]:
+def is_using_dark_theme(color: str) -> bool:
+    # Simple heuristic: if the color is dark, use light text; otherwise, use dark text
+    hex_color = str_to_hex(color)
+    r = (hex_color >> 16) & 0xFF
+    g = (hex_color >> 8) & 0xFF
+    b = hex_color & 0xFF
+    # Calculate luminance (perceived brightness)
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return luminance < 128  # True if color is dark
+
+def generate_highlight_colors(fg: str, bg: str, adj: int = 0x20) -> tuple[str, str]:
+    """Try to generate readable highlight colors based on theme fg/bg.
+
+    This adjusts the background and foreground colors by shifting RGB channels
+    independently, which avoids the artifacts caused by treating the full 0xRRGGBB
+    value as a single integer.
     """
-    Try to generate readable highlight colors based on theme fg/bg.
-    Returns (highlight_bg, highlight_fg)
-    """
 
-    # Convert #RRGGBB -> int
-    x_bg = str_to_hex(bg)
-    x_fg = str_to_hex(fg)
+    def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+        h = hex_str.lstrip("#")
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
-    # Adjust background
-    hover_bg = x_bg - adj if x_bg > middle else x_bg + adj
+    def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+        return "#" + "".join(f"{c:02x}" for c in rgb)
 
-    # Adjust foreground
-    if x_bg > middle:
-        hover_fg = max(0x000000, x_fg - adj)
-    else:
-        hover_fg = min(0xFFFFFF, x_fg + adj)
+    def _clamp(v: int) -> int:
+        return max(0, min(255, v))
 
-    # Clamp values inside RGB range
-    hover_bg = max(0x000000, min(0xFFFFFF, hover_bg))
-    hover_fg = max(0x000000, min(0xFFFFFF, hover_fg))
+    def _adjust(rgb: tuple[int, int, int], delta: int, lighten: bool) -> tuple[int, int, int]:
+        if lighten:
+            return tuple(_clamp(c + delta) for c in rgb)
+        else:
+            return tuple(_clamp(c - delta) for c in rgb)
 
-    # Convert back to "#RRGGBB"
-    hover_bg = f"#{hover_bg:06x}"
-    hover_fg = f"#{hover_fg:06x}"
+    # Parse colors
+    bg_rgb = _hex_to_rgb(bg)
+    fg_rgb = _hex_to_rgb(fg)
 
-    return hover_bg, hover_fg
+    # Determine whether background is dark or light (perceived luminance)
+    bg_luminance = 0.299 * bg_rgb[0] + 0.587 * bg_rgb[1] + 0.114 * bg_rgb[2]
+    bg_is_dark = bg_luminance < 128
+
+    # Adjust background by shifting its RGB channels
+    hover_bg_rgb = _adjust(bg_rgb, adj, lighten=bg_is_dark)
+
+    # Make the foreground contrast with the new background
+    hover_fg_rgb = _adjust(fg_rgb, adj, lighten=bg_is_dark)
+
+    return _rgb_to_hex(hover_bg_rgb), _rgb_to_hex(hover_fg_rgb)
     
     
     
