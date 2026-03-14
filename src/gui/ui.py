@@ -4,21 +4,23 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.core.runtime import RuntimeContext
 
+import os
 import time
 import re
 import asyncio
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, colorchooser
 import tkinter.font as tkfont
 from datetime import datetime
 from src.ui.log_buffer import log_buffer
-from src.core.config import settings, update_env_variable
+from src.core.config import settings, update_env_variable, load_settings
 from src.core.logger import get_logger
 from src.core.dispatcher import handle_command
 from src.utils.history import CommandHistory
 from src.utils.tools import flatten_dict, str_to_hex, invert_color
 from src.services.fetcher import get_event, load_events
 from src.gui.theme import ThemeManager
+from src.gui.tags import TagManager
 
 logger = get_logger(__name__)
 
@@ -48,9 +50,16 @@ class GUIApp:
         # ---- create theme object ----
         
         self.theme = ThemeManager(self)
+
+        # Apply saved font-size settings (from config/env)
+        self.theme.font_size = settings.font_size_main
+        self.theme.font_size_output = settings.font_size_main
+        self.theme.font_size_input = settings.font_size_input
+        self.theme.font_size_detail = settings.font_size_detail
+        self.theme.font_size_footer_label = settings.font_size_other
+        self.theme.font_size_other = settings.font_size_other
         
         # ---- ui variables ----
-        
         self.current_event = {}
         self.current_event_id = ""
         self.last_time_clicked = time.perf_counter()
@@ -92,13 +101,25 @@ class GUIApp:
         # Apply theme from config, fallback default
         theme = settings.default_theme
         
-        if theme:
-            self.theme.apply(theme)
-            
-        else:
+        try:
+            if theme:
+                self.theme.apply(theme)
+                
+            else:
+                self.theme.apply("dark")
+        
+        except Exception:
             self.theme.apply("default")
-        
-        
+
+        # Apply optional base colors from settings (overrides theme defaults)
+        if settings.base_bg_color and settings.base_fg_color:
+            self.theme.set_base_colors(settings.base_bg_color, settings.base_fg_color)
+
+        # configure tags for text widgets
+        self.tag_manager = TagManager(self.theme)
+        self.use_color_tags = True
+
+
         # ---- loop ----
         
         # start loop
@@ -186,6 +207,269 @@ class GUIApp:
         # Info log theme change
         logger.info(f"Theme changed to '{self.theme.current_theme}'")
 
+    def on_press_edit_settings(self):
+        settings_to_apply = {}
+
+        win = tk.Toplevel(self.root)
+        win.title("Edit Settings")
+        win.geometry("600x600")
+        win.transient(self.root)
+        win.resizable(True, True)
+
+        win.grid_rowconfigure(0, weight=1)
+        win.grid_columnconfigure(0, weight=1)
+
+        frame = ttk.Frame(win, padding=10)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.grid_columnconfigure(1, weight=1)
+
+        title_label = ttk.Label(frame, text="Settings")
+        title_label.grid(row=0, column=0, columnspan=3, sticky="n")
+        title_label.config(font=tkfont.Font(size=14, weight="bold"))
+
+        # Theme & color selection
+        theme_frame = ttk.Frame(frame)
+        theme_frame.configure(borderwidth=1, relief="solid", padding=10)
+        theme_frame.grid(row=1, column=0, columnspan=3, sticky="new", pady=(10, 0))
+
+        theme_label = ttk.Label(theme_frame, text="Theme & colors", anchor="nw")
+        theme_label.grid(row=0, column=0, sticky="nw", columnspan=3)
+        theme_label.config(font=tkfont.Font(size=12, weight="bold"))
+
+        theme_var = tk.StringVar(value=self.theme.current_theme)
+        theme_select = ttk.Combobox(
+            theme_frame,
+            textvariable=theme_var,
+            values=list(self.theme.themes.keys()),
+            state="readonly",
+            width=12
+        )
+        theme_select.grid(row=1, column=0, sticky="w", padx=(0, 6), pady=(4, 0))
+
+        def on_theme_select(event=None):
+            selected = theme_var.get()
+            settings_to_apply["POLIS_SCANNER_DEFAULT_THEME"] = selected
+            self.on_select_theme(selected)
+            # Reapply base colors if the user set them
+            if settings.base_bg_color and settings.base_fg_color:
+                self.theme.set_base_colors(settings.base_bg_color, settings.base_fg_color)
+            
+            self.on_press_edit_settings()  # Reopen settings to update color pickers with new theme colors
+
+        theme_select.bind("<<ComboboxSelected>>", on_theme_select)
+
+        # Background/foreground color pickers
+        base_bg = settings.base_bg_color or self.theme.palette[self.theme.current_theme].get("text", {}).get("background", "#ffffff")
+        base_fg = settings.base_fg_color or self.theme.palette[self.theme.current_theme].get("text", {}).get("foreground", "#000000")
+
+        base_bg_var = tk.StringVar(value=base_bg)
+        base_fg_var = tk.StringVar(value=base_fg)
+
+        def pick_color(var, label_text):
+            # Ensure the settings window is above other windows so the dialog appears in front
+            win.lift()
+            win.focus_force()
+
+            color = colorchooser.askcolor(title=label_text, initialcolor=var.get(), parent=win)
+            if not color or not color[1]:
+                return
+            var.set(color[1])
+            settings_to_apply["POLIS_SCANNER_BASE_BG_COLOR"] = base_bg_var.get()
+            settings_to_apply["POLIS_SCANNER_BASE_FG_COLOR"] = base_fg_var.get()
+            self.theme.set_base_colors(base_bg_var.get(), base_fg_var.get())
+
+        bg_button = ttk.Button(
+            theme_frame,
+            text="Background",
+            command=lambda: pick_color(base_bg_var, "Pick background color")
+        )
+        bg_button.grid(row=1, column=1, sticky="w", padx=(0, 6), pady=(4, 0))
+
+        fg_button = ttk.Button(
+            theme_frame,
+            text="Foreground",
+            command=lambda: pick_color(base_fg_var, "Pick foreground color")
+        )
+        fg_button.grid(row=1, column=2, sticky="w", pady=(4, 0))
+
+        # ----------
+
+        font_frame = ttk.Frame(frame)
+        font_frame.configure(borderwidth=1, relief="solid", padding=10)
+        font_frame.grid(row=2, column=0, columnspan=3, sticky="new", pady=(10,0))
+
+        font_label = ttk.Label(font_frame, text="Font Settings",  anchor="nw")
+        font_label.grid(row=0, column=0, sticky="nw", columnspan=2)
+        font_label.config(font=tkfont.Font(size=12, weight="bold"))
+
+        main_font_label = ttk.Label(font_frame, text="Main text size:")
+        main_font_label.grid(row=1, column=0, sticky="w")
+        main_font_label.config(font=tkfont.Font(size=10))
+        main_font_size = tk.IntVar(value=self.theme.font_size)
+        main_font_spin = ttk.Spinbox(
+            font_frame,
+            from_=6,
+            to=72,
+            textvariable=main_font_size,
+            width=6
+        )
+        main_font_spin.config(font=tkfont.Font(size=10))
+        main_font_spin.set(self.theme.font_size)
+        main_font_spin.grid(row=1, column=1, sticky="ne", padx=5)
+
+        def on_main_font_size_change(*args):
+            size = main_font_size.get()
+            settings_to_apply["POLIS_SCANNER_FONT_SIZE_MAIN"] = size
+            self.theme.font_size = size
+            self.theme.font_size_output = size
+            self.theme.fonts[self.theme.current_theme]["text"]["size"] = size
+            self.theme.fonts[self.theme.current_theme]["log"]["size"] = size
+            self.theme.fonts[self.theme.current_theme]["output_bold"]["size"] = size
+            self.theme.set_fonts()
+
+        main_font_size.trace_add("write", on_main_font_size_change)
+
+        input_font_label = ttk.Label(font_frame, text="Input (entry/combobox) size:")
+        input_font_label.grid(row=2, column=0, sticky="w")
+        input_font_label.config(font=tkfont.Font(size=10))
+        input_font_size = tk.IntVar(value=settings.font_size_input)
+        input_font_spin = ttk.Spinbox(
+            font_frame,
+            from_=6,
+            to=72,
+            textvariable=input_font_size,
+            width=6
+        )
+        input_font_spin.config(font=tkfont.Font(size=10))
+        input_font_spin.set(settings.font_size_input)
+        input_font_spin.grid(row=2, column=1, sticky="ne", padx=5)
+
+        def on_input_font_size_change(*args):
+            size = input_font_size.get()
+            settings_to_apply["POLIS_SCANNER_FONT_SIZE_INPUT"] = size
+            self.theme.font_size_input = size
+            self.theme.set_fonts()
+
+        input_font_size.trace_add("write", on_input_font_size_change)
+
+        detail_font_label = ttk.Label(font_frame, text="Detail panel size:")
+        detail_font_label.grid(row=3, column=0, sticky="w")
+        detail_font_label.config(font=tkfont.Font(size=10))
+        detail_font_size = tk.IntVar(value=settings.font_size_detail)
+        detail_font_spin = ttk.Spinbox(
+            font_frame,
+            from_=6,
+            to=72,
+            textvariable=detail_font_size,
+            width=6
+        )
+        detail_font_spin.config(font=tkfont.Font(size=10))
+        detail_font_spin.set(settings.font_size_detail)
+        detail_font_spin.grid(row=3, column=1, sticky="ne", padx=5)
+
+        def on_detail_font_size_change(*args):
+            size = detail_font_size.get()
+            settings_to_apply["POLIS_SCANNER_FONT_SIZE_DETAIL"] = size
+            self.theme.font_size_detail = size
+            self.theme.set_fonts()
+
+        detail_font_size.trace_add("write", on_detail_font_size_change)
+
+        other_font_label = ttk.Label(font_frame, text="Other widgets size:")
+        other_font_label.grid(row=4, column=0, sticky="w")
+        other_font_label.config(font=tkfont.Font(size=10))
+        other_font_size = tk.IntVar(value=settings.font_size_other)
+        other_font_spin = ttk.Spinbox(
+            font_frame,
+            from_=6,
+            to=72,
+            textvariable=other_font_size,
+            width=6
+        )
+        other_font_spin.config(font=tkfont.Font(size=10))
+        other_font_spin.set(settings.font_size_other)
+        other_font_spin.grid(row=4, column=1, sticky="ne", padx=5)
+
+        def on_other_font_size_change(*args):
+            size = other_font_size.get()
+            settings_to_apply["POLIS_SCANNER_FONT_SIZE_OTHER"] = size
+            self.theme.font_size_other = size
+            self.theme.font_size_footer_label = size
+            self.theme.set_fonts()
+
+        other_font_size.trace_add("write", on_other_font_size_change)
+
+        developer_frame = ttk.Frame(frame, borderwidth=1, relief="solid", padding=10)
+        developer_frame.grid(row=3, column=0, columnspan=3, sticky="new", pady=(10, 0))
+        developer_label = ttk.Label(developer_frame, text="Developer settings (requires restart)", anchor="nw")
+        developer_label.grid(row=0, column=0, columnspan=2, sticky="nw", pady=(10, 0))
+        developer_label.config(font=tkfont.Font(size=12, weight="bold"))
+        debug_mode_var = tk.BooleanVar(value=settings.debug_mode)
+        debug_mode_label = ttk.Label(developer_frame, text=f"Debug mode:", anchor="w")
+        debug_mode_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        debug_mode_check = ttk.Checkbutton(developer_frame, style="ToolbuttonCheck.TCheckbutton", text=f"Toggle: {debug_mode_var.get()}", variable=debug_mode_var)
+        #debug_mode_check.config(width=len(debug_mode_check.cget("text")))
+        debug_mode_check.grid(row=1, column=1, sticky="w", pady=(4, 0))
+
+        def on_debug_mode_change(*args):
+            value = debug_mode_var.get()
+            debug_mode_check.config(text=f"Debug: {value}")
+            settings_to_apply["POLIS_SCANNER_DEBUG_MODE"] = value
+
+        debug_mode_var.trace_add("write", on_debug_mode_change) 
+
+
+        def on_save_settings():
+            for key, value in settings_to_apply.items():
+                update_env_variable(key, str(value))
+            self.theme.set_fonts()
+            win.destroy()
+
+        def on_cancel_settings():
+            win.destroy()
+
+        button_frame = ttk.Frame(frame)
+        last_row = frame.grid_size()[1]
+        button_frame.grid(row=last_row, column=0, columnspan=3, sticky="e", pady=(10, 0))
+
+        def on_reset_settings():
+            # Remove the current env file and reload defaults
+            try:
+                if settings.env_path and settings.env_path.exists():
+                    settings.env_path.unlink()
+            except Exception:
+                pass
+
+            load_settings(force_reload=True)
+
+            # Re-apply defaults in UI
+            self.theme.font_size = settings.font_size_main
+            self.theme.font_size_output = settings.font_size_main
+            self.theme.font_size_input = settings.font_size_input
+            self.theme.font_size_detail = settings.font_size_detail
+            self.theme.font_size_footer_label = settings.font_size_other
+            self.theme.font_size_other = settings.font_size_other
+            self.theme.apply(settings.default_theme)
+
+            win.destroy()
+
+        reset_button = ttk.Button(button_frame, text="Reset defaults", command=on_reset_settings)
+        reset_button.grid(row=0, column=0, padx=5)
+
+        save_button = ttk.Button(button_frame, text="Save", command=on_save_settings)
+        save_button.grid(row=0, column=1, padx=5)
+
+        cancel_button = ttk.Button(button_frame, text="Cancel", command=on_cancel_settings)
+        cancel_button.grid(row=0, column=2, padx=5)
+
+        self.root.update_idletasks()
+
+
+
+        self.root.update_idletasks()
+
+        
+
     
     def save_window_position(self):
         self.root.update_idletasks()
@@ -208,6 +492,7 @@ class GUIApp:
         # ---- Root ----
         
         self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_rowconfigure(0, weight=0)
         self.root.grid_rowconfigure(1, weight=0)
         self.root.grid_rowconfigure(2, weight=1)
         self.root.grid_rowconfigure(3, weight=0)
@@ -221,12 +506,34 @@ class GUIApp:
         self.title_bar = ttk.Frame(self.root)
         self.title_bar.grid(row=0, column=0, sticky="ew")
 
-        self.title_bar.grid_columnconfigure(0, weight=1)
-        self.title_bar.grid_columnconfigure(1, weight=0)
+        self.title_bar.grid_columnconfigure(0, weight=0)
+        self.title_bar.grid_columnconfigure(1, weight=1)
+        self.title_bar.grid_columnconfigure(2, weight=0)
 
-        # Title label (center expand)
+        # Title label (centered behind the buttons)
         self.title_label = ttk.Label(self.title_bar, anchor="center")
-        self.title_label.grid(row=0, column=0, sticky="ew", columnspan=2)
+        self.title_label.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+        # Make title label lower priority than the menubuttons (so buttons remain clickable)
+        self.title_label.lower()
+
+        # Settings button (left aligned)
+        self.settings_menu_button = ttk.Menubutton(
+            self.title_bar,
+            text="Settings",
+            style="TMenubutton"
+        )
+        self.settings_menu_button.grid(row=0, column=0, padx=2, sticky="w")
+
+        # Settings menu
+        self.settings_menu = tk.Menu(self.settings_menu_button, tearoff=0)
+        self.settings_menu.add_command(
+            label="Edit settings",
+            command=self.on_press_edit_settings
+        )
+        
+        self.settings_menu_button.config(menu=self.settings_menu)
+
 
         # Theme menu button (right aligned)
         self.theme_menu_button = ttk.Menubutton(
@@ -234,12 +541,9 @@ class GUIApp:
             text="Theme",
             style="TMenubutton"
         )
-        self.theme_menu_button.grid(row=0, column=1, padx=2, sticky="e")
-        
-        # Make title label lower prio then menubutton
-        self.title_label.lower()
-        
-        # Menu
+        self.theme_menu_button.grid(row=0, column=2, padx=2, sticky="e")
+
+        # Theme menu
         self.theme_menu = tk.Menu(self.theme_menu_button, tearoff=0)
         
         theme_names = [*self.theme.themes.keys()]
@@ -435,9 +739,12 @@ class GUIApp:
             wrap="word",
             height=10
         )
+        self.detail.configure(state="normal")
+        self.detail.delete("1.0", tk.END)
+        self.detail.insert("1.0", "Click on an event in the output to see details here...")
+        self.detail.config(state="disabled")
 
         self.detail.grid(row=0, column=0, sticky="nsew")
-        self.detail.config(state="disabled")
 
         self.detail_frame.grid_rowconfigure(0, weight=1)
         self.detail_frame.grid_columnconfigure(0, weight=1)
@@ -460,11 +767,7 @@ class GUIApp:
         
         self.footer_label.grid(row=0, column=0, sticky="ew")
         
-        
-        # Register widgets for theme
-        self.theme.menus.append(self.theme_menu)
-        
-        
+
         # ---- append widgets to to theme widget registry ----
         self.theme.menus = [v for v in vars(self).values() if isinstance(v, tk.Menu)]
         self.theme.menubuttons = [v for v in vars(self).values() if isinstance(v, ttk.Menubutton)]
@@ -476,14 +779,12 @@ class GUIApp:
         self.theme.frames = [v for v in vars(self).values() if isinstance(v, ttk.Frame)]
         self.theme.buttons = [v for v in vars(self).values() if isinstance(v, ttk.Button)]
             
-            
         # Store grid settings for later use
         self.detail_grid_info = self.detail.grid_info()
         self.detail_frame = self.detail_frame
         self.footer_frame = self.footer
         self.footer_grid_info = self.footer.grid_info()
-        
-        
+
         # set input field as focus after a short amount of time
         self.root.after(150, lambda: self.input.focus_set())
         
@@ -914,6 +1215,8 @@ class GUIApp:
             self.detail.insert(tk.END, line)
 
         self.detail.insert(tk.END, "(all)")
+
+        self.tag_manager.apply_detail_tags(self.detail, self.detail.get("1.0", tk.END))
         self.detail.config(state="disabled")
             
             
@@ -1054,6 +1357,7 @@ class GUIApp:
         else:
             near_bottom = False
 
+        new_lines_start = self.rendered_lines + 1
         for line in new_lines:
             if LOG_RE.match(line):
                 parts = line.split(" | ", 1)
@@ -1064,6 +1368,8 @@ class GUIApp:
                 self.output.insert("end", f"{rest}\n")
             else:
                 self.output.insert("end", f"{line}\n")
+
+        self.tag_manager.apply_color_tags(self.output, "\n".join(new_lines), new_lines_start)
 
         if auto_scroll and near_bottom:
             self.output.see("end")

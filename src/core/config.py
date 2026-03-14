@@ -43,6 +43,7 @@ class Settings:
 
     app_name: str
     version: str
+    debug_mode: bool
 
     base_dir: Path
     data_dir: Path
@@ -66,6 +67,16 @@ class Settings:
     command_history_len: int
     
     default_theme: str
+
+    # Custom theme overrides
+    base_bg_color: str
+    base_fg_color: str
+
+    # Font sizes (UI)
+    font_size_main: int
+    font_size_input: int
+    font_size_detail: int
+    font_size_other: int
 
 
 # -------------------------------------------------------------
@@ -109,6 +120,7 @@ def load_settings(force_reload: bool = False) -> Settings:
         env_path=env_path,
         app_name=os.environ.get("POLIS_SCANNER_NAME") or "polis-scanner",
         version=os.environ.get("POLIS_SCANNER_VERSION") or "0.0.1",
+        debug_mode=os.environ.get("POLIS_SCANNER_DEBUG_MODE", "false").lower() == "true",
         base_dir=base_dir,
         data_dir=data_dir,
         logs_dir=logs_dir,
@@ -170,7 +182,43 @@ def load_settings(force_reload: bool = False) -> Settings:
         default_theme=(
             os.environ.get(
                 "POLIS_SCANNER_DEFAULT_THEME",
-                "default"
+                "dark"
+            )
+        ),
+        base_bg_color=(
+            os.environ.get(
+                "POLIS_SCANNER_BASE_BG_COLOR",
+                ""
+            )
+        ),
+        base_fg_color=(
+            os.environ.get(
+                "POLIS_SCANNER_BASE_FG_COLOR",
+                ""
+            )
+        ),
+        font_size_main=int(
+            os.environ.get(
+                "POLIS_SCANNER_FONT_SIZE_MAIN",
+                10
+            )
+        ),
+        font_size_input=int(
+            os.environ.get(
+                "POLIS_SCANNER_FONT_SIZE_INPUT",
+                10
+            )
+        ),
+        font_size_detail=int(
+            os.environ.get(
+                "POLIS_SCANNER_FONT_SIZE_DETAIL",
+                9
+            )
+        ),
+        font_size_other=int(
+            os.environ.get(
+                "POLIS_SCANNER_FONT_SIZE_OTHER",
+                9
             )
         )
     )

@@ -38,8 +38,15 @@ def get_logger(name: str, log_file: Path = None) -> logging.Logger:
     logger.setLevel(logging.DEBUG)
 
     # UI handler (replaces console)
+    use_debug = False
+    try:
+        use_debug = settings.debug_mode
+    
+    except Exception:
+        pass
+
     ui = UILogHandler()
-    ui.setLevel(logging.INFO)
+    ui.setLevel(logging.INFO if not use_debug else logging.DEBUG)
     ui.setFormatter(
         PrefixFormatter(
             "%(prefix)s %(asctime)s | %(message)s",
